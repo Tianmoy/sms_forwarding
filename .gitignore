@@ -1,0 +1,5 @@
+# Local Wi-Fi credentials. Copy from code/wifi_config.example.h.
+code/wifi_config.h
+
+# Local Arduino build output
+build/
