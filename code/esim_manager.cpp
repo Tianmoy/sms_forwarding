@@ -52,6 +52,8 @@ struct SwitchJob {
 EsimProfile profiles[MAX_ESIM_PROFILES];
 uint8_t profileCount = 0;
 unsigned long profilesUpdatedAt = 0;
+String cachedEid;
+bool eidValid = false;
 SwitchState switchState = SWITCH_IDLE;
 SwitchJob job;
 Preferences esimPrefs;
@@ -329,10 +331,10 @@ bool readProfiles(String &error) {
   return parsed;
 }
 
-int enableResult(const String &hex) {
+int profileOpResult(const String &hex, uint32_t tag) {
   Tlv outer;
   size_t total = hex.length() / 2;
-  if (!readTlv(hex, 0, total, outer) || outer.tag != 0xBF31) return -1;
+  if (!readTlv(hex, 0, total, outer) || outer.tag != tag) return -1;
   size_t pos = outer.valueOffset;
   while (pos < outer.nextOffset) {
     Tlv field;
@@ -416,6 +418,130 @@ void esimManagerBegin() {
   }
 }
 
+String esimGetEid(String &error) {
+  if (eidValid) return cachedEid;
+  if (!simManagerIsReady()) {
+    error = "SIM 尚未就绪";
+    return "";
+  }
+  if (esimIsBusy() || profileIoBusy) {
+    error = "eUICC 忙";
+    return "";
+  }
+  profileIoBusy = true;
+  int channel = -1;
+  if (!openIsdr(channel, error)) {
+    profileIoBusy = false;
+    return "";
+  }
+  String data;
+  uint16_t status = 0;
+  String apdu = hexByte(channelCla(channel)) + "E2910006BF3E035C015A00";
+  bool ok = transmitApdu(channel, apdu, data, status, error);
+  closeChannel(channel);
+  profileIoBusy = false;
+  if (!ok) return "";
+  if (status != 0x9000) {
+    error = "EID 读取失败 (SW=" + hexByte(status >> 8) + hexByte(status & 0xff) + ")";
+    return "";
+  }
+  Tlv top;
+  size_t totalBytes = data.length() / 2;
+  String eid;
+  if (readTlv(data, 0, totalBytes, top) && top.tag == 0xBF3E) {
+    size_t pos = top.valueOffset;
+    while (pos < top.nextOffset) {
+      Tlv field;
+      if (!readTlv(data, pos, top.nextOffset, field)) break;
+      pos = field.nextOffset;
+      if (field.tag == 0x5A) {
+        eid = hexSlice(data, field.valueOffset, field.length);
+        break;
+      }
+    }
+  }
+  if (eid.length() == 0) {
+    error = "EID 响应格式无效";
+    return "";
+  }
+  cachedEid = eid;
+  eidValid = true;
+  return cachedEid;
+}
+
+bool esimDeleteProfile(const String &profileId, String &message) {
+  if (!simManagerIsReady()) {
+    message = "SIM 尚未就绪";
+    return false;
+  }
+  if (esimIsBusy()) {
+    message = "eSIM 切换任务正在执行";
+    return false;
+  }
+  String normalized = profileId;
+  normalized.toUpperCase();
+  bool found = false;
+  bool enabled = false;
+  for (uint8_t i = 0; i < profileCount; ++i) {
+    if (profiles[i].id.equalsIgnoreCase(normalized)) {
+      found = true;
+      enabled = profiles[i].enabled;
+    }
+  }
+  if (!found) {
+    String error;
+    if (!readProfiles(error)) {
+      message = error;
+      return false;
+    }
+    for (uint8_t i = 0; i < profileCount; ++i) {
+      if (profiles[i].id == normalized) {
+        found = true;
+        enabled = profiles[i].enabled;
+      }
+    }
+  }
+  if (!found) {
+    message = "目标 Profile 不在当前 eUICC 列表中";
+    return false;
+  }
+  if (enabled) {
+    message = "不能删除正在使用的 Profile，请先切换到其他卡功能";
+    return false;
+  }
+  profileIoBusy = true;
+  int channel = -1;
+  String error;
+  if (!openIsdr(channel, error)) {
+    profileIoBusy = false;
+    message = error;
+    return false;
+  }
+  String request = "BF33124F10" + normalized;
+  String apdu = hexByte(channelCla(channel)) + "E2910015" + request + "00";
+  String data;
+  uint16_t status = 0;
+  bool transmitted = transmitApdu(channel, apdu, data, status, error);
+  closeChannel(channel);
+  profileIoBusy = false;
+  if (!transmitted) {
+    message = error;
+    return false;
+  }
+  if (status != 0x9000) {
+    message = "eUICC 拒绝删除请求 (SW=" + hexByte(status >> 8) + hexByte(status & 0xff) + ")";
+    return false;
+  }
+  int result = data.length() ? profileOpResult(data, 0xBF33) : -1;
+  if (result != 0) {
+    message = result > 0 ? "删除失败，eUICC 返回码 " + String(result)
+                         : "删除响应无法解析";
+    return false;
+  }
+  esimManagerInvalidateProfiles();
+  return true;
+}
+
 bool esimRefreshProfiles(String &error) {
   if (!simManagerIsReady()) {
     error = "SIM 尚未就绪";
@@ -460,6 +586,8 @@ void esimManagerInvalidateProfiles() {
   for (uint8_t i = 0; i < MAX_ESIM_PROFILES; ++i) profiles[i] = EsimProfile();
   profileCount = 0;
   profilesUpdatedAt = 0;
+  cachedEid = "";
+  eidValid = false;
 }
 
 bool esimStartSwitch(const String &profileId, String &message) {
@@ -524,7 +652,7 @@ bool esimStartSwitch(const String &profileId, String &message) {
   closeChannel(channel);
 
   if (transmitted && status == 0x9000 && data.length()) {
-    int result = enableResult(data);
+    int result = profileOpResult(data, 0xBF31);
     if (result > 0) {
       static const char *errors[] = {"", "目标不存在", "目标不是停用状态", "策略禁止切换",
                                      "不允许重新启用该 Profile", "SIM Toolkit 忙"};

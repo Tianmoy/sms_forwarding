@@ -10,6 +10,9 @@ bool esimProfilesLoaded();
 void esimManagerInvalidateProfiles();
 String esimProfilesJson();
 bool esimStartSwitch(const String &profileId, String &message);
+// Returns cached EID hex string, or empty string with error set.
+String esimGetEid(String &error);
+bool esimDeleteProfile(const String &profileId, String &message);
 bool esimIsBusy();
 String esimActiveProfileLabel();
 // Stable, inbox-friendly receiver label. Includes a masked ICCID tail when

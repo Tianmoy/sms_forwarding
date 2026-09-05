@@ -208,6 +208,48 @@ void handleApiEsimSwitch() {
   sendJson(202, "{\"ok\":true,\"message\":\"" + jsonEscapeApi(message) + "\",\"job\":" + esimJobJson() + "}");
 }
 
+void handleApiEsimEid() {
+  if (!authRequire()) return;
+  if (!simManagerIsReady()) {
+    sendJson(200, "{\"ok\":true,\"eid\":\"\"}");
+    return;
+  }
+  if (modemIsBusy()) {
+    sendJson(409, "{\"ok\":false,\"error\":\"modem_busy\",\"message\":\"模组正在处理其他通信，请稍后重试\"}");
+    return;
+  }
+  String error;
+  String eid = esimGetEid(error);
+  if (!eid.length()) {
+    sendJson(503, "{\"ok\":false,\"error\":\"esim\",\"message\":\"" + jsonEscapeApi(error) + "\"}");
+    return;
+  }
+  sendJson(200, "{\"ok\":true,\"eid\":\"" + jsonEscapeApi(eid) + "\"}");
+}
+
+void handleApiEsimDelete() {
+  if (!authRequireCsrf()) return;
+  if (!simManagerIsReady()) {
+    sendJson(409, "{\"ok\":false,\"error\":\"sim_not_ready\",\"message\":\"SIM 尚未就绪\"}");
+    return;
+  }
+  if (modemIsBusy()) {
+    sendJson(409, "{\"ok\":false,\"error\":\"modem_busy\",\"message\":\"模组正在处理其他通信，请稍后重试\"}");
+    return;
+  }
+  String id = server.arg("id");
+  if (id.length() != 32) {
+    sendJson(400, "{\"ok\":false,\"error\":\"invalid_profile\"}");
+    return;
+  }
+  String message;
+  if (!esimDeleteProfile(id, message)) {
+    sendJson(400, "{\"ok\":false,\"message\":\"" + jsonEscapeApi(message) + "\"}");
+    return;
+  }
+  sendJson(200, "{\"ok\":true,\"message\":\"Profile 已删除\"}");
+}
+
 void handleApiOperatorGet() {
   if (!authRequire()) return;
   sendJson(200, operatorManagerJson());
@@ -356,6 +398,8 @@ void registerApiRoutes() {
   server.on("/api/esim/profiles", HTTP_GET, handleApiEsimProfiles);
   server.on("/api/esim/refresh", HTTP_POST, handleApiEsimRefresh);
   server.on("/api/esim/switch", HTTP_POST, handleApiEsimSwitch);
+  server.on("/api/esim/eid", HTTP_GET, handleApiEsimEid);
+  server.on("/api/esim/delete", HTTP_POST, handleApiEsimDelete);
   server.on("/api/operator", HTTP_GET, handleApiOperatorGet);
   server.on("/api/operator/scan", HTTP_POST, handleApiOperatorScan);
   server.on("/api/operator/select", HTTP_POST, handleApiOperatorSelect);

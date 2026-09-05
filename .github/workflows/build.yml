@@ -33,4 +33,10 @@ jobs:
     - name: Compile firmware
       run: |
         cp ./code/wifi_config.example.h ./code/wifi_config.h
-        arduino-cli compile --fqbn esp32:esp32:makergo_c3_supermini --board-options PartitionScheme=no_ota ./code
+        arduino-cli compile --fqbn esp32:esp32:makergo_c3_supermini --board-options PartitionScheme=no_ota --output-dir ./fw ./code
+
+    - name: Upload firmware
+      uses: actions/upload-artifact@v4
+      with:
+        name: firmware
+        path: ./fw/*
