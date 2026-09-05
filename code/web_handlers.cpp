@@ -659,7 +659,7 @@ void handleSendSms() {
   
   bool success = false;
   String resultMsg = "";
-  
+
   if (phone.length() == 0) {
     resultMsg = "错误：请输入目标号码";
   } else if (content.length() == 0) {
@@ -668,39 +668,14 @@ void handleSendSms() {
     logCaptureLn(String("网页端发送短信请求"));
     logCaptureLn(String("目标号码: " + phone));
     logCaptureLn(String("短信内容: " + content));
-    
+
     success = sendSMS(phone.c_str(), content.c_str());
-    resultMsg = success ? "短信发送成功！" : "短信发送失败，请检查模组状态";
+    resultMsg = success ? "短信发送成功" : "短信发送失败，请检查模组状态";
   }
-  
-  String html = R"rawliteral(
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="UTF-8">
-  <meta http-equiv="refresh" content="3;url=/sms">
-  <title>发送结果</title>
-  <style>
-    body { font-family: Arial, sans-serif; text-align: center; padding-top: 100px; background: #f5f5f5; }
-    .result { padding: 20px; border-radius: 10px; display: inline-block; }
-    .success { background: #4CAF50; color: white; }
-    .error { background: #f44336; color: white; }
-  </style>
-</head>
-<body>
-  <div class="result %CLASS%">
-    <h2>%ICON% %MSG%</h2>
-    <p>3秒后返回发送页面...</p>
-  </div>
-</body>
-</html>
-)rawliteral";
-  
-  html.replace("%CLASS%", success ? "success" : "error");
-  html.replace("%ICON%", success ? "✅" : "❌");
-  html.replace("%MSG%", resultMsg);
-  
-  server.send(200, "text/html", html);
+
+  String json = "{\"success\":" + String(success ? "true" : "false") +
+                ",\"message\":\"" + jsonEscape(resultMsg) + "\"}";
+  server.send(200, "application/json", json);
 }
 
 // 处理Ping请求
@@ -890,6 +865,47 @@ void handlePing() {
   }
   json += "}";
   
+  server.send(200, "application/json", json);
+}
+
+// 数据流量(PDP)开关
+void handleDataToggle() {
+  if (!authRequireCsrf()) return;
+  if (esimIsBusy()) {
+    server.send(409, "application/json", "{\"success\":false,\"message\":\"eSIM切换中，无法操作数据连接\"}");
+    return;
+  }
+  if (!requireModemRouteReady()) return;
+  if (!modemAcquireExclusive()) {
+    server.send(409, "application/json", "{\"success\":false,\"message\":\"模组正在处理其他通信，请稍后重试\"}");
+    return;
+  }
+  checkSerial1URC();
+
+  String action = server.arg("action");
+  bool success = false;
+  String message;
+
+  if (action == "on") {
+    logCaptureLn(String("网页端开启数据连接: AT+CGACT=1,1"));
+    String resp = sendATCommand("AT+CGACT=1,1", 15000);
+    success = (resp.indexOf("OK") >= 0);
+    message = success ? "数据连接已开启" : "开启失败: " + resp.substring(0, 60);
+  } else if (action == "off") {
+    logCaptureLn(String("网页端关闭数据连接: AT+CGACT=0,1"));
+    String resp = sendATCommand("AT+CGACT=0,1", 8000);
+    success = (resp.indexOf("OK") >= 0);
+    message = success ? "数据连接已关闭" : "关闭失败: " + resp.substring(0, 60);
+  } else {
+    String resp = sendATCommand("AT+CGACT?", 5000);
+    int idx = resp.indexOf("+CGACT: 1,1");
+    success = resp.indexOf("+CGACT:") >= 0;
+    message = (idx >= 0) ? "数据连接已开启" : "数据连接已关闭";
+  }
+
+  String json = "{\"success\":" + String(success ? "true" : "false") +
+                ",\"message\":\"" + jsonEscape(message) + "\"}";
+  modemReleaseExclusive();
   server.send(200, "application/json", json);
 }
 

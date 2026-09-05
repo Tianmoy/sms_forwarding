@@ -30,22 +30,34 @@ void setup() {
     logCaptureLn(String("⚠️ 短信持久化存储初始化失败"));
   }
 
-  // ---- WiFi 连接优化 ----
+  // ---- WiFi 连接 ----
   WiFi.mode(WIFI_STA);
-  WiFi.setSleep(false);                    // 关闭 Modem Sleep，提高连接响应速度
+  WiFi.setSleep(false);                    // 保持射频常开,后台响应零延迟
   WiFi.setAutoReconnect(true);             // 断线后自动重连
-  // 使用快速扫描而非全信道扫描（全信道扫描在空信道上等待超时极慢）
-  // 首次连接成功后 ESP32 会自动记住信道，下次启动更快
   WiFi.setScanMethod(WIFI_FAST_SCAN);
   WiFi.setSortMethod(WIFI_CONNECT_AP_BY_SIGNAL);
-  WiFi.begin(WIFI_SSID, WIFI_PASS);
-  logCaptureLn(String("连接wifi: ") + String(WIFI_SSID));
 
-  // 带超时的等待连接，失败则重启重试
+  // 优先使用网页配置的WiFi,失败则回退编译期凭据,保证设备不会失联
+  const bool hasRuntimeWifi = config.wifiSsid.length() > 0;
+  const char* primarySsid = hasRuntimeWifi ? config.wifiSsid.c_str() : WIFI_SSID;
+  const char* primaryPass = hasRuntimeWifi ? config.wifiPass.c_str() : WIFI_PASS;
+  WiFi.begin(primarySsid, primaryPass);
+  logCaptureLn(String("连接wifi: ") + primarySsid);
+
   unsigned long wifiStart = millis();
-  const unsigned long WIFI_TIMEOUT = 20000; // 20秒超时
-  while (WiFi.status() != WL_CONNECTED && millis() - wifiStart < WIFI_TIMEOUT) {
+  while (WiFi.status() != WL_CONNECTED && millis() - wifiStart < 20000) {
     blink_short(200);
+  }
+
+  if (WiFi.status() != WL_CONNECTED && hasRuntimeWifi) {
+    logCaptureLn(String("⚠️ 网页配置的WiFi连接失败，回退编译期WiFi: ") + WIFI_SSID);
+    WiFi.disconnect(true);
+    delay(500);
+    WiFi.begin(WIFI_SSID, WIFI_PASS);
+    wifiStart = millis();
+    while (WiFi.status() != WL_CONNECTED && millis() - wifiStart < 20000) {
+      blink_short(200);
+    }
   }
 
   if (WiFi.status() == WL_CONNECTED) {
@@ -69,6 +81,10 @@ void setup() {
   server.on("/log", HTTP_GET, handleLog);
   server.on("/modem", HTTP_POST, handleModem);
   server.on("/wifi", HTTP_POST, handleWifi);
+  server.on("/sendsms", HTTP_POST, handleSendSms);
+  server.on("/ping", HTTP_POST, handlePing);
+  server.on("/flight", HTTP_POST, handleFlightMode);
+  server.on("/data", HTTP_POST, handleDataToggle);
   registerApiRoutes();
   server.begin();
   logCaptureLn(String("HTTP服务器已启动"));
@@ -137,4 +153,42 @@ void loop() {
     if (Serial.available()) Serial1.write(Serial.read());
     checkSerial1URC();
   }
+  checkKeepalive();
+  delay(1);
+}
+
+// 自动保号:临时激活数据连接并 Ping,产生真实流量后关闭
+static void runKeepalivePing() {
+  logCaptureLn(String("自动保号 Ping 开始"));
+  sendATCommand("AT+CGACT=1,1", 10000);
+  delay(300);
+  Serial1.println("AT+MPING=\"8.8.8.8\",10,1");
+  unsigned long start = millis();
+  while (millis() - start < 16000) {
+    while (Serial1.available()) {
+      dispatchSerial1Byte(Serial1.read(), false);
+    }
+    server.handleClient();
+    delay(2);
+  }
+  sendATCommand("AT+CGACT=0,1", 8000);
+  logCaptureLn(String("自动保号 Ping 结束"));
+}
+
+static void checkKeepalive() {
+  static unsigned long lastCheck = 0;
+  if (millis() - lastCheck < 60000) return;
+  lastCheck = millis();
+  if (config.keepaliveDays == 0) return;
+  time_t now = time(nullptr);
+  if (now < 100000) return;  // NTP 尚未同步
+  if (!modemReady || esimIsBusy() || operatorManagerIsBusy() ||
+      simManagerIsBusy() || smsStoredMessageIsBusy() || modemIsBusy()) {
+    return;
+  }
+  uint32_t day = (uint32_t)(now / 86400);
+  uint32_t last = configLastKeepaliveDay();
+  if (last != 0 && day - last < config.keepaliveDays) return;
+  runKeepalivePing();
+  configRecordKeepalive(day);
 }

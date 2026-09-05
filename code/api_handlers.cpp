@@ -5,6 +5,7 @@
 #include "esim_manager.h"
 #include "modem.h"
 #include "operator_manager.h"
+#include "push.h"
 #include "sim_manager.h"
 #include "sms_store.h"
 #include "web_handlers.h"
@@ -298,6 +299,66 @@ void handleApiOperatorAuto() {
   sendJson(202, operatorManagerJson());
 }
 
+void handleApiWifiPost() {
+  if (!authRequireCsrf()) return;
+  if (server.hasArg("clear")) {
+    config.wifiSsid = "";
+    config.wifiPass = "";
+    saveConfig();
+    sendJson(200, "{\"ok\":true,\"message\":\"已清除网页WiFi配置，重启后回退编译期配置\"}");
+    delay(800);
+    ESP.restart();
+    return;
+  }
+  String ssid = server.arg("wifiSsid");
+  String pass = server.arg("wifiPass");
+  ssid.trim();
+  if (ssid.length() == 0 || ssid.length() > 32 || pass.length() > 64) {
+    sendJson(400, "{\"ok\":false,\"message\":\"WiFi 名称或密码长度无效\"}");
+    return;
+  }
+  config.wifiSsid = ssid;
+  config.wifiPass = pass;
+  saveConfig();
+  sendJson(200, "{\"ok\":true,\"message\":\"WiFi 已保存，设备即将重启生效\"}");
+  delay(800);
+  ESP.restart();
+}
+
+void handleApiReboot() {
+  if (!authRequireCsrf()) return;
+  sendJson(200, "{\"ok\":true,\"message\":\"设备正在重启，约 40 秒后恢复\"}");
+  delay(800);
+  ESP.restart();
+}
+
+void handleApiPushTest() {
+  if (!authRequireCsrf()) return;
+  if (WiFi.status() != WL_CONNECTED) {
+    sendJson(409, "{\"ok\":false,\"message\":\"WiFi 未连接\"}");
+    return;
+  }
+  String timestamp = String(time(nullptr));
+  int sent = 0;
+  for (int i = 0; i < MAX_PUSH_CHANNELS; ++i) {
+    if (isPushChannelValid(config.pushChannels[i])) {
+      sendToChannel(config.pushChannels[i], "测试", "推送通道测试消息", timestamp.c_str());
+      ++sent;
+    }
+  }
+  bool emailOk = config.smtpServer.length() > 0 && config.smtpUser.length() > 0 &&
+                 config.smtpPass.length() > 0 && config.smtpSendTo.length() > 0;
+  if (emailOk) {
+    sendEmailNotification("推送测试", "这是一条来自设备的推送通道测试邮件");
+    ++sent;
+  }
+  if (sent == 0) {
+    sendJson(400, "{\"ok\":false,\"message\":\"没有已启用的推送通道或邮件配置\"}");
+    return;
+  }
+  sendJson(200, "{\"ok\":true,\"message\":\"已发送测试消息（" + String(sent) + " 个通道），请查收\"}");
+}
+
 void handleApiConfigGet() {
   if (!authRequire()) return;
   String json;
@@ -320,11 +381,14 @@ void handleApiConfigGet() {
             ",\"key2Set\":" + String(ch.key2.length() ? "true" : "false") +
             ",\"urlConfigured\":" + String(ch.url.length() ? "true" : "false") +
             ",\"key1Configured\":" + String(ch.key1.length() ? "true" : "false") +
-            ",\"key2Configured\":" + String(ch.key2.length() ? "true" : "false") +
-            ",\"customBody\":\"" + jsonEscapeApi(ch.customBody) + "\"}";
-  }
-  json += "]}";
-  sendJson(200, json);
+             ",\"key2Configured\":" + String(ch.key2.length() ? "true" : "false") +
+             ",\"customBody\":\"" + jsonEscapeApi(ch.customBody) + "\"}";
+   }
+   json += "],\"wifi\":{\"ssid\":\"" + jsonEscapeApi(config.wifiSsid) +
+           "\",\"passSet\":" + String(config.wifiPass.length() ? "true" : "false") +
+           ",\"source\":\"" + String(config.wifiSsid.length() ? "web" : "build") +
+           "\"},\"keepaliveDays\":" + String(config.keepaliveDays) + "}";
+   sendJson(200, json);
 }
 
 void handleApiConfigPost() {
@@ -355,6 +419,9 @@ void handleApiConfigPost() {
   }
   if (server.hasArg("adminPhone")) config.adminPhone = adminPhone;
   if (server.hasArg("numberBlackList")) config.numberBlackList = blacklist;
+  if (server.hasArg("keepaliveDays")) {
+    config.keepaliveDays = (uint8_t)constrain(server.arg("keepaliveDays").toInt(), 0, 90);
+  }
 
   if (server.hasArg("smtpServer")) config.smtpServer = server.arg("smtpServer").substring(0, 128);
   if (server.hasArg("smtpPort")) config.smtpPort = constrain(server.arg("smtpPort").toInt(), 1, 65535);
@@ -406,4 +473,7 @@ void registerApiRoutes() {
   server.on("/api/operator/auto", HTTP_POST, handleApiOperatorAuto);
   server.on("/api/config", HTTP_GET, handleApiConfigGet);
   server.on("/api/config", HTTP_POST, handleApiConfigPost);
+  server.on("/api/wifi", HTTP_POST, handleApiWifiPost);
+  server.on("/api/reboot", HTTP_POST, handleApiReboot);
+  server.on("/api/push/test", HTTP_POST, handleApiPushTest);
 }

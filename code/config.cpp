@@ -13,6 +13,9 @@ void saveConfig() {
   preferences.putString("webUser", config.webUser);
   preferences.putString("webPass", config.webPass);
   preferences.putString("numBlkList", config.numberBlackList);
+  preferences.putString("webWifiSsid", config.wifiSsid);
+  preferences.putString("webWifiPass", config.wifiPass);
+  preferences.putUChar("keepaliveDays", config.keepaliveDays);
   
   // 保存推送通道配置
   for (int i = 0; i < MAX_PUSH_CHANNELS; i++) {
@@ -42,6 +45,9 @@ void loadConfig() {
   config.webUser = preferences.getString("webUser", DEFAULT_WEB_USER);
   config.webPass = preferences.getString("webPass", DEFAULT_WEB_PASS);
   config.numberBlackList = preferences.getString("numBlkList", "");
+  config.wifiSsid = preferences.getString("webWifiSsid", "");
+  config.wifiPass = preferences.getString("webWifiPass", "");
+  config.keepaliveDays = preferences.getUChar("keepaliveDays", 0);
   
   // 加载推送通道配置
   for (int i = 0; i < MAX_PUSH_CHANNELS; i++) {
@@ -114,4 +120,17 @@ bool isConfigValid() {
 // 获取当前设备URL
 String getDeviceUrl() {
   return "http://" + WiFi.localIP().toString() + "/";
+}
+
+uint32_t configLastKeepaliveDay() {
+  preferences.begin("sms_config", true);
+  uint32_t day = preferences.getUInt("kaLastDay", 0);
+  preferences.end();
+  return day;
+}
+
+void configRecordKeepalive(uint32_t day) {
+  preferences.begin("sms_config", false);
+  preferences.putUInt("kaLastDay", day);
+  preferences.end();
 }

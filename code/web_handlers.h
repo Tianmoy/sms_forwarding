@@ -21,6 +21,7 @@ void handleToolsPage();
 void handleSave();
 void handleQuery();
 void handleFlightMode();
+void handleDataToggle();
 void handleATCommand();
 void handleSendSms();
 void handlePing();

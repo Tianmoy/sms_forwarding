@@ -44,6 +44,9 @@ struct Config {
   String webUser;      // Web管理账号
   String webPass;      // Web管理密码
   String numberBlackList;  // 号码黑名单（换行符分隔）
+  String wifiSsid;     // 运行时WiFi配置（空则回退编译期 wifi_config.h）
+  String wifiPass;
+  uint8_t keepaliveDays;  // 自动Ping保号间隔天数，0=关闭
 };
 
 // 默认Web管理账号密码
