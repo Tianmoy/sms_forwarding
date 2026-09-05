@@ -204,21 +204,97 @@ int parseChannel(const String &response) {
   return -1;
 }
 
-bool openIsdr(int &channel, String &error) {
-  String cmd = "AT+CCHO=\"" + String(ISDR_AID) + "\"";
-  String response = sendATCommand(cmd.c_str(), 5000);
-  channel = parseChannel(response);
-  if (channel <= 0) {
-    error = "无法打开 eUICC ISD-R 通道";
+enum IsdrTransport {
+  TRANSPORT_CGLA,         // 原生 AT+CCHO/CGLA
+  TRANSPORT_CSIM_LOGICAL, // CSIM 手动开逻辑通道
+  TRANSPORT_CSIM_BASIC    // CSIM 基础通道直连 ISD-R
+};
+uint8_t isdrTransport = TRANSPORT_CGLA;
+
+// AT+CSIM 透传:响应引号内为 <data><SW>
+bool csimExchange(const String &apdu, String &data, uint16_t &status, String &error) {
+  data = "";
+  status = 0;
+  String cmd = "AT+CSIM=" + String(apdu.length()) + ",\"" + apdu + "\"";
+  String response = sendATCommand(cmd.c_str(), 6000);
+  int marker = response.indexOf("+CSIM:");
+  int firstQuote = marker >= 0 ? response.indexOf('"', marker) : -1;
+  int secondQuote = firstQuote >= 0 ? response.indexOf('"', firstQuote + 1) : -1;
+  if (firstQuote < 0 || secondQuote <= firstQuote + 4) {
+    error = "eUICC APDU 无响应";
     return false;
   }
+  String payload = response.substring(firstQuote + 1, secondQuote);
+  payload.trim();
+  if (payload.length() < 4 || payload.length() % 2 != 0) {
+    error = "eUICC APDU 响应格式错误";
+    return false;
+  }
+  status = static_cast<uint16_t>(strtoul(payload.substring(payload.length() - 4).c_str(), nullptr, 16));
+  data = payload.substring(0, payload.length() - 4);
   return true;
+}
+
+bool openIsdr(int &channel, String &error) {
+  String response = sendATCommand(("AT+CCHO=\"" + String(ISDR_AID) + "\"").c_str(), 5000);
+  channel = parseChannel(response);
+  if (channel > 0) {
+    isdrTransport = TRANSPORT_CGLA;
+    return true;
+  }
+  logCaptureLn(String("CCHO 打开 ISD-R 失败，降级 CSIM 逻辑通道"));
+
+  String data;
+  uint16_t status = 0;
+  if (csimExchange("0070000001", data, status, error) && status == 0x9000 && data.length() >= 2) {
+    int ch = static_cast<int>(strtoul(data.substring(0, 2).c_str(), nullptr, 16));
+    if (ch > 0 && ch < 20) {
+      String cla = hexByte(channelCla(ch));
+      if (csimExchange(cla + "A4040010" + String(ISDR_AID), data, status, error)) {
+        if ((status >> 8) == 0x61) {
+          csimExchange(cla + "C00000" + hexByte(status & 0xff), data, status, error);
+          status = 0x9000;
+        }
+        if (status == 0x9000) {
+          channel = ch;
+          isdrTransport = TRANSPORT_CSIM_LOGICAL;
+          return true;
+        }
+      }
+      String closeData;
+      uint16_t closeStatus = 0;
+      String closeError;
+      csimExchange("00708000" + hexByte(ch), closeData, closeStatus, closeError);
+    }
+  }
+  logCaptureLn(String("CSIM 逻辑通道失败，降级 CSIM 基础通道"));
+
+  if (csimExchange("00A4040010" + String(ISDR_AID), data, status, error)) {
+    if ((status >> 8) == 0x61) {
+      csimExchange("00C00000" + hexByte(status & 0xff), data, status, error);
+      status = 0x9000;
+    }
+    if (status == 0x9000) {
+      channel = 0;
+      isdrTransport = TRANSPORT_CSIM_BASIC;
+      return true;
+    }
+  }
+  error = "无法打开 eUICC ISD-R 通道(CCHO 与 CSIM 均失败)";
+  return false;
 }
 
 void closeChannel(int channel) {
   if (channel <= 0) return;
-  String cmd = "AT+CCHC=" + String(channel);
-  sendATCommand(cmd.c_str(), 2000);
+  if (isdrTransport == TRANSPORT_CGLA) {
+    String cmd = "AT+CCHC=" + String(channel);
+    sendATCommand(cmd.c_str(), 2000);
+  } else if (isdrTransport == TRANSPORT_CSIM_LOGICAL) {
+    String data;
+    uint16_t status = 0;
+    String error;
+    csimExchange("00708000" + hexByte(channel), data, status, error);
+  }
 }
 
 bool transmitApdu(int channel, const String &apdu, String &data, uint16_t &status, String &error) {
@@ -226,10 +302,18 @@ bool transmitApdu(int channel, const String &apdu, String &data, uint16_t &statu
   status = 0;
   String current = apdu;
   for (uint8_t round = 0; round < 8; ++round) {
-    String cmd = "AT+CGLA=" + String(channel) + "," + String(current.length()) + ",\"" + current + "\"";
+    String cmd;
+    const char *marker;
+    if (isdrTransport == TRANSPORT_CGLA) {
+      cmd = "AT+CGLA=" + String(channel) + "," + String(current.length()) + ",\"" + current + "\"";
+      marker = "+CGLA:";
+    } else {
+      cmd = "AT+CSIM=" + String(current.length()) + ",\"" + current + "\"";
+      marker = "+CSIM:";
+    }
     String response = sendATCommand(cmd.c_str(), 6000);
-    int marker = response.indexOf("+CGLA:");
-    int firstQuote = marker >= 0 ? response.indexOf('"', marker) : -1;
+    int m = response.indexOf(marker);
+    int firstQuote = m >= 0 ? response.indexOf('"', m) : -1;
     int secondQuote = firstQuote >= 0 ? response.indexOf('"', firstQuote + 1) : -1;
     if (firstQuote < 0 || secondQuote <= firstQuote + 4) {
       error = "eUICC APDU 无响应";
@@ -247,7 +331,8 @@ bool transmitApdu(int channel, const String &apdu, String &data, uint16_t &statu
     uint8_t sw1 = status >> 8;
     uint8_t sw2 = status & 0xff;
     if (sw1 == 0x61) {
-      current = hexByte(channelCla(channel)) + "C00000" + hexByte(sw2);
+      String grCla = (isdrTransport == TRANSPORT_CSIM_BASIC) ? String("00") : hexByte(channelCla(channel));
+      current = grCla + "C00000" + hexByte(sw2);
       continue;
     }
     return true;

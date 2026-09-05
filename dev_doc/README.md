@@ -65,7 +65,7 @@ code/
 ├── push.h / .cpp         # 多通道推送、邮件通知、加密工具函数
 ├── sms_process.h / .cpp  # 短信解析、长短信合并、黑名单、管理员命令
 ├── sms_store.h / .cpp    # LittleFS 短信持久化与收件箱
-├── esim_manager.h / .cpp # eUICC Profile 枚举、切换任务、EID 读取与删除
+├── esim_manager.h / .cpp # eUICC Profile 枚举、切换任务、EID 读取与删除（通道三级降级）
 ├── operator_manager.*    # 异步扫描、手动选网与自动选网任务
 ├── web_handlers.h / .cpp # HTTP 请求处理器 + 日志环形缓冲区
 ├── web_html.h / .cpp     # SPA HTML 页面模板（单页 10 个面板）
