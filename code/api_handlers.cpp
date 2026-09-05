@@ -322,8 +322,13 @@ void handleApiWifiPost() {
       sendJson(400, "{\"ok\":false,\"message\":\"WiFi 名称或密码长度无效\"}");
       return;
     }
-    if (pass.length() == 0 && ssid.length() > 0 && ssid == config.wifiNets[i].ssid) {
-      pass = config.wifiNets[i].pass;  // 未修改的行保留旧密码
+    if (pass.length() == 0 && ssid.length() > 0) {
+      for (int k = 0; k < WIFI_NETS_MAX; ++k) {
+        if (config.wifiNets[k].ssid == ssid) {
+          pass = config.wifiNets[k].pass;  // 同名网络未填密码时保留旧密码
+          break;
+        }
+      }
     }
     if (ssid.length() > 0) anySsid = true;
     updated[i].ssid = ssid;
