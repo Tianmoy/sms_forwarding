@@ -353,30 +353,31 @@ void handleApiReboot() {
 }
 
 void handleApiPushTest() {
-  if (!authRequireCsrf()) return;
+  if (!authRequire()) return;
   if (WiFi.status() != WL_CONNECTED) {
     sendJson(409, "{\"ok\":false,\"message\":\"WiFi 未连接\"}");
     return;
   }
+  String ch = server.arg("channel");
   String timestamp = String(time(nullptr));
-  int sent = 0;
-  for (int i = 0; i < MAX_PUSH_CHANNELS; ++i) {
-    if (isPushChannelValid(config.pushChannels[i])) {
-      sendToChannel(config.pushChannels[i], "测试", "推送通道测试消息", timestamp.c_str());
-      ++sent;
+  if (ch == "email") {
+    bool emailOk = config.smtpServer.length() > 0 && config.smtpUser.length() > 0 &&
+                   config.smtpPass.length() > 0 && config.smtpSendTo.length() > 0;
+    if (!emailOk) {
+      sendJson(400, "{\"ok\":false,\"message\":\"邮件通知未配置\"}");
+      return;
     }
-  }
-  bool emailOk = config.smtpServer.length() > 0 && config.smtpUser.length() > 0 &&
-                 config.smtpPass.length() > 0 && config.smtpSendTo.length() > 0;
-  if (emailOk) {
-    sendEmailNotification("推送测试", "这是一条来自设备的推送通道测试邮件");
-    ++sent;
-  }
-  if (sent == 0) {
-    sendJson(400, "{\"ok\":false,\"message\":\"没有已启用的推送通道或邮件配置\"}");
+    sendEmailNotification("推送测试", "这是一条来自设备的邮件通道测试");
+    sendJson(200, "{\"ok\":true,\"message\":\"测试邮件已发送，请查收\"}");
     return;
   }
-  sendJson(200, "{\"ok\":true,\"message\":\"已发送测试消息（" + String(sent) + " 个通道），请查收\"}");
+  int idx = ch.toInt();
+  if (idx < 0 || idx >= MAX_PUSH_CHANNELS || !isPushChannelValid(config.pushChannels[idx])) {
+    sendJson(400, "{\"ok\":false,\"message\":\"通道未配置或编号无效\"}");
+    return;
+  }
+  sendToChannel(config.pushChannels[idx], "测试", "推送通道测试消息", timestamp.c_str());
+  sendJson(200, "{\"ok\":true,\"message\":\"已向通道 " + String(idx + 1) + " 发送测试，请查收\"}");
 }
 
 void handleApiFactoryReset() {
@@ -396,10 +397,40 @@ void handleApiBrand() {
                     "\",\"sub\":\"" + jsonEscapeApi(config.brandSub) + "\"}");
 }
 
+void handleApiSmsSend() {
+  if (!authRequire()) return;
+  if (!simManagerIsReady() || !simManagerSmsReady()) {
+    sendJson(409, "{\"ok\":false,\"message\":\"SIM 或短信服务尚未就绪\"}");
+    return;
+  }
+  if (esimIsBusy()) {
+    sendJson(409, "{\"ok\":false,\"message\":\"eSIM切换中，无法发送短信\"}");
+    return;
+  }
+  if (modemIsBusy()) {
+    sendJson(409, "{\"ok\":false,\"message\":\"模组正在初始化或处理其他通信，请稍后重试\"}");
+    return;
+  }
+  String phone = server.arg("phone");
+  String content = server.arg("content");
+  phone.trim();
+  content.trim();
+  if (phone.length() == 0 || content.length() == 0) {
+    sendJson(400, "{\"ok\":false,\"message\":\"请填写目标号码和短信内容\"}");
+    return;
+  }
+  logCaptureLn(String("网页端发送短信请求"));
+  logCaptureLn(String("目标号码: " + phone));
+  logCaptureLn(String("短信内容: " + content));
+  bool ok = sendSMS(phone.c_str(), content.c_str());
+  sendJson(200, "{\"ok\":" + String(ok ? "true" : "false") +
+                    ",\"message\":\"" + jsonEscapeApi(ok ? "短信发送成功" : "短信发送失败，请检查模组状态") + "\"}");
+}
+
 void handleApiConfigGet() {
   if (!authRequire()) return;
   String json;
-  json.reserve(1800);
+  json.reserve(4096);
   json = "{\"ok\":true,\"webUser\":\"" + jsonEscapeApi(config.webUser) +
          "\",\"mustChangePassword\":" + String(config.webPass == DEFAULT_WEB_PASS ? "true" : "false") +
          ",\"adminPhone\":\"" + jsonEscapeApi(config.adminPhone) + "\",\"numberBlackList\":\"" +
@@ -428,9 +459,24 @@ void handleApiConfigGet() {
             "\",\"passSet\":" + String(config.wifiNets[i].pass.length() ? "true" : "false") + "}";
   }
   json += "],\"apMode\":" + String(WiFi.getMode() == WIFI_AP ? "true" : "false") +
-          "},\"keepaliveDays\":" + String(config.keepaliveDays) +
-          ",\"brand\":{\"title\":\"" + jsonEscapeApi(config.brandTitle) +
-          "\",\"sub\":\"" + jsonEscapeApi(config.brandSub) + "\"}}";
+          "},\"brand\":{\"title\":\"" + jsonEscapeApi(config.brandTitle) +
+          "\",\"sub\":\"" + jsonEscapeApi(config.brandSub) + "\"},\"tasks\":[";
+  for (int i = 0; i < MAX_CUSTOM_TASKS; ++i) {
+    if (i) json += ',';
+    json += "{\"type\":" + String(config.tasks[i].type) +
+            ",\"name\":\"" + jsonEscapeApi(config.tasks[i].name) +
+            "\",\"mode\":" + String(config.tasks[i].mode) +
+            ",\"intervalSeconds\":" + String(config.tasks[i].intervalSeconds) +
+            ",\"hour\":" + String(config.tasks[i].hour) +
+            ",\"minute\":" + String(config.tasks[i].minute) +
+            ",\"weekday\":" + String(config.tasks[i].weekday) +
+            ",\"dayOfMonth\":" + String(config.tasks[i].dayOfMonth) +
+            ",\"param\":\"" + jsonEscapeApi(config.tasks[i].param) + "\",\"httpMethod\":" +
+            String(config.tasks[i].httpMethod) + ",\"headers\":\"" + jsonEscapeApi(config.tasks[i].headers) +
+            "\",\"body\":\"" + jsonEscapeApi(config.tasks[i].body) + "\"}";
+  }
+  json += "],\"pollSeconds\":" + String(config.pollSeconds) +
+         ",\"apiToken\":\"" + jsonEscapeApi(config.apiToken) + "\"}";
   sendJson(200, json);
 }
 
@@ -462,8 +508,14 @@ void handleApiConfigPost() {
   }
   if (server.hasArg("adminPhone")) config.adminPhone = adminPhone;
   if (server.hasArg("numberBlackList")) config.numberBlackList = blacklist;
-  if (server.hasArg("keepaliveDays")) {
-    config.keepaliveDays = (uint8_t)constrain(server.arg("keepaliveDays").toInt(), 0, 90);
+  if (server.hasArg("pollSeconds")) {
+    config.pollSeconds = (uint8_t)constrain(server.arg("pollSeconds").toInt(), 1, 60);
+  }
+  if (server.hasArg("apiToken")) {
+    String t = server.arg("apiToken");
+    t.trim();
+    if (t.length() > 64) t = t.substring(0, 64);
+    config.apiToken = t;
   }
   if (server.hasArg("brandTitle")) {
     String t = server.arg("brandTitle");
@@ -476,6 +528,37 @@ void handleApiConfigPost() {
     s.trim();
     if (s.length() > 40) s = s.substring(0, 40);
     config.brandSub = s;
+  }
+
+  int taskCount = -1;
+  if (server.hasArg("taskCount")) {
+    taskCount = constrain(server.arg("taskCount").toInt(), 0, MAX_CUSTOM_TASKS);
+  }
+  for (int i = 0; i < MAX_CUSTOM_TASKS; ++i) {
+    String p = "task" + String(i);
+    if (taskCount >= 0 && i >= taskCount) {
+      config.tasks[i] = CustomTask();
+      continue;
+    }
+    if (server.hasArg(p + "type")) {
+      uint8_t ty = (uint8_t)constrain(server.arg(p + "type").toInt(), 0, 3);
+      config.tasks[i].type = ty;
+      if (ty != TASK_NONE && !server.hasArg(p + "intervalSeconds")) {
+        sendJson(400, "{\"ok\":false,\"message\":\"缺少任务间隔\"}");
+        return;
+      }
+    }
+    if (server.hasArg(p + "param")) config.tasks[i].param = server.arg(p + "param").substring(0, 256);
+    if (server.hasArg(p + "name")) config.tasks[i].name = server.arg(p + "name").substring(0, 24);
+    if (server.hasArg(p + "mode")) config.tasks[i].mode = (uint8_t)constrain(server.arg(p + "mode").toInt(), 0, 3);
+    if (server.hasArg(p + "intervalSeconds")) config.tasks[i].intervalSeconds = (uint32_t)constrain(strtoul(server.arg(p + "intervalSeconds").c_str(), nullptr, 10), 0UL, 31536000UL);
+    if (server.hasArg(p + "hour")) config.tasks[i].hour = (uint8_t)constrain(server.arg(p + "hour").toInt(), 0, 23);
+    if (server.hasArg(p + "minute")) config.tasks[i].minute = (uint8_t)constrain(server.arg(p + "minute").toInt(), 0, 59);
+    if (server.hasArg(p + "weekday")) config.tasks[i].weekday = (uint8_t)constrain(server.arg(p + "weekday").toInt(), 0, 6);
+    if (server.hasArg(p + "mday")) config.tasks[i].dayOfMonth = (uint8_t)constrain(server.arg(p + "mday").toInt(), 1, 28);
+    if (server.hasArg(p + "hm")) config.tasks[i].httpMethod = (uint8_t)constrain(server.arg(p + "hm").toInt(), 0, 1);
+    if (server.hasArg(p + "hdrs")) config.tasks[i].headers = server.arg(p + "hdrs").substring(0, 384);
+    if (server.hasArg(p + "tbody")) config.tasks[i].body = server.arg(p + "tbody").substring(0, 512);
   }
 
   if (server.hasArg("smtpServer")) config.smtpServer = server.arg("smtpServer").substring(0, 128);
@@ -538,8 +621,9 @@ void registerApiRoutes() {
   server.on("/api/config", HTTP_GET, handleApiConfigGet);
   server.on("/api/config", HTTP_POST, handleApiConfigPost);
   server.on("/api/wifi", HTTP_POST, handleApiWifiPost);
-  server.on("/api/reboot", HTTP_POST, handleApiReboot);
+  server.on("/api/sms/send", HTTP_POST, handleApiSmsSend);
+  server.on("/api/reboot", handleApiReboot);
   server.on("/api/push/test", HTTP_POST, handleApiPushTest);
-  server.on("/api/factory/reset", HTTP_POST, handleApiFactoryReset);
+  server.on("/api/factory/reset", handleApiFactoryReset);
   server.on("/api/brand", HTTP_GET, handleApiBrand);
 }

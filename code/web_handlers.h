@@ -25,7 +25,6 @@ void handleDataToggle();
 bool wifiConnectAll();
 void wifiStartAp();
 void handleATCommand();
-void handleSendSms();
 void handlePing();
 void handleLog();
 void handleModem();

@@ -1,6 +1,7 @@
 #include "globals.h"
 #include "config.h"
 #include "web_handlers.h"
+#include <HTTPClient.h>
 #include "modem.h"
 #include "push.h"
 #include "sms_process.h"
@@ -38,15 +39,14 @@ void setup() {
   server.on("/", HTTP_GET, handleRoot);
   server.on("/tools", HTTP_GET, handleRoot);
   server.on("/sms", HTTP_GET, handleRoot);
-  server.on("/query", HTTP_GET, handleQuery);
+  server.on("/query", handleQuery);
   server.on("/at", HTTP_POST, handleATCommand);
   server.on("/log", HTTP_GET, handleLog);
-  server.on("/modem", HTTP_POST, handleModem);
+  server.on("/modem", handleModem);
   server.on("/wifi", HTTP_POST, handleWifi);
-  server.on("/sendsms", HTTP_POST, handleSendSms);
   server.on("/ping", HTTP_POST, handlePing);
-  server.on("/flight", HTTP_POST, handleFlightMode);
-  server.on("/data", HTTP_POST, handleDataToggle);
+  server.on("/flight", handleFlightMode);
+  server.on("/data", handleDataToggle);
   registerApiRoutes();
   server.begin();
   logCaptureLn(String("HTTP服务器已启动"));
@@ -126,11 +126,118 @@ void loop() {
     if (Serial.available()) Serial1.write(Serial.read());
     checkSerial1URC();
   }
-  checkKeepalive();
+  if (schedulerTickDue()) {
+    checkCustomTasks();
+  }
   checkWifiFailover();
   delay(1);
 }
 
+// 自定义任务:按小时间隔定时执行 重启/AT/HTTP
+static void runCustomTask(int i) {
+  const CustomTask &t = config.tasks[i];
+  if (t.type == TASK_RESTART) {
+    logCaptureLn(String("自定义任务") + String(i + 1) + ": 定时重启设备");
+    configRecordTaskRun(i, time(nullptr));
+    delay(500);
+    ESP.restart();
+  } else if (t.type == TASK_AT) {
+    logCaptureLn(String("自定义任务") + String(i + 1) + ": 执行 AT: " + t.param);
+    String resp = sendATCommand(t.param.c_str(), 8000);
+    logCaptureLn(String("任务AT响应: ") + resp.substring(0, 180));
+  } else if (t.type == TASK_HTTP) {
+    logCaptureLn(String("自定义任务") + String(i + 1) + ": " + String(t.httpMethod == 1 ? "POST " : "GET ") + t.param);
+    if (WiFi.status() != WL_CONNECTED) {
+      logCaptureLn(String("任务HTTP跳过: WiFi未连接"));
+      return;
+    }
+    HTTPClient http;
+    http.begin(t.param.c_str());
+    http.setTimeout(15000);
+    int from = 0;
+    while (from >= 0 && from < (int)t.headers.length()) {
+      int eol = t.headers.indexOf('\n', from);
+      String line = t.headers.substring(from, eol < 0 ? t.headers.length() : eol);
+      line.trim();
+      int colon = line.indexOf(':');
+      if (colon > 0) {
+        String name = line.substring(0, colon);
+        name.trim();
+        String value = line.substring(colon + 1);
+        value.trim();
+        http.addHeader(name.c_str(), value.c_str(), false);
+      }
+      from = eol < 0 ? t.headers.length() : eol + 1;
+    }
+    int code = t.httpMethod == 1 ? http.POST(t.body) : http.GET();
+    logCaptureLn(String("任务HTTP响应码: ") + String(code));
+    http.end();
+  }
+}
+
+// 日历模式按本地时区 UTC+8 计算,与网页端展示一致
+constexpr long kLocalTzOffsetSec = 8 * 3600L;
+
+static uint8_t daysInMonth(int year, int mon) {
+  static const uint8_t d[] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
+  if (mon == 1 && ((year % 4 == 0 && year % 100 != 0) || year % 400 == 0)) return 29;
+  return d[mon];
+}
+
+// 返回最近一个已到达的计划时刻(本地帧);非日历模式返回 0
+static time_t lastScheduledAt(const CustomTask &t, time_t nowLocal, struct tm &lt) {
+  time_t dayStart = nowLocal - (lt.tm_hour * 3600 + lt.tm_min * 60 + lt.tm_sec);
+  if (t.mode == 1) return dayStart + t.hour * 3600 + t.minute * 60;
+  if (t.mode == 2) {
+    int back = (lt.tm_wday - t.weekday + 7) % 7;
+    return dayStart - (time_t)back * 86400 + t.hour * 3600 + t.minute * 60;
+  }
+  if (t.mode == 3) {
+    uint8_t dom = t.dayOfMonth < 1 ? 1 : t.dayOfMonth;
+    uint8_t dim = daysInMonth(lt.tm_year + 1900, lt.tm_mon);
+    if (dom > dim) dom = dim;
+    time_t monthStart = dayStart - (time_t)(lt.tm_mday - 1) * 86400;
+    return monthStart + (time_t)(dom - 1) * 86400 + t.hour * 3600 + t.minute * 60;
+  }
+  return 0;
+}
+
+static void checkCustomTasks() {
+  time_t now = time(nullptr);
+  if (now < 100000) return;
+  for (int i = 0; i < MAX_CUSTOM_TASKS; i++) {
+    const CustomTask &t = config.tasks[i];
+    if (t.type == TASK_NONE) continue;
+    if (t.mode == 0 && t.intervalSeconds == 0) continue;
+    if (t.type != TASK_HTTP) {
+      if (esimIsBusy() || operatorManagerIsBusy() || simManagerIsBusy() ||
+          smsStoredMessageIsBusy() || modemIsBusy()) {
+        continue;
+      }
+    }
+    uint32_t last = configTaskLastRun(i);
+    bool due = false;
+    if (t.mode == 0) {
+      due = (last == 0) || ((uint32_t)now - last >= t.intervalSeconds);
+    } else {
+      time_t local = now + kLocalTzOffsetSec;
+      struct tm lt;
+      gmtime_r(&local, &lt);
+      time_t at = lastScheduledAt(t, local, lt);
+      if (at > 0) due = (local >= at) && (last == 0 || (time_t)last + kLocalTzOffsetSec < at);
+    }
+    if (!due) continue;
+    configRecordTaskRun(i, (uint32_t)now);
+    runCustomTask(i);
+  }
+}
+
+static unsigned long schedulerLastTick = 0;
+static bool schedulerTickDue() {
+  if (millis() - schedulerLastTick < 60000) return false;
+  schedulerLastTick = millis();
+  return true;
+}
 // WiFi 断开超过 2 分钟时轮换到下一个已配置网络(仅 STA 模式)
 static void checkWifiFailover() {
   static unsigned long wifiDownSince = 0;
@@ -148,38 +255,4 @@ static void checkWifiFailover() {
   wifiConnectAll();
 }
 
-// 自动保号:临时激活数据连接并 Ping,产生真实流量后关闭
-static void runKeepalivePing() {
-  logCaptureLn(String("自动保号 Ping 开始"));
-  sendATCommand("AT+CGACT=1,1", 10000);
-  delay(300);
-  Serial1.println("AT+MPING=\"8.8.8.8\",10,1");
-  unsigned long start = millis();
-  while (millis() - start < 16000) {
-    while (Serial1.available()) {
-      dispatchSerial1Byte(Serial1.read(), false);
-    }
-    server.handleClient();
-    delay(2);
-  }
-  sendATCommand("AT+CGACT=0,1", 8000);
-  logCaptureLn(String("自动保号 Ping 结束"));
-}
 
-static void checkKeepalive() {
-  static unsigned long lastCheck = 0;
-  if (millis() - lastCheck < 60000) return;
-  lastCheck = millis();
-  if (config.keepaliveDays == 0) return;
-  time_t now = time(nullptr);
-  if (now < 100000) return;  // NTP 尚未同步
-  if (!modemReady || esimIsBusy() || operatorManagerIsBusy() ||
-      simManagerIsBusy() || smsStoredMessageIsBusy() || modemIsBusy()) {
-    return;
-  }
-  uint32_t day = (uint32_t)(now / 86400);
-  uint32_t last = configLastKeepaliveDay();
-  if (last != 0 && day - last < config.keepaliveDays) return;
-  runKeepalivePing();
-  configRecordKeepalive(day);
-}

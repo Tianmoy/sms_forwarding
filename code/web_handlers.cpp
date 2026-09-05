@@ -70,6 +70,13 @@ bool checkAuth() {
   return authRequire();
 }
 
+// 查询类 action 允许 GET;写操作(开关/重启等)仅限 POST
+static bool requirePostMethod() {
+  if (server.method() != HTTP_GET) return true;
+  server.send(405, "application/json", "{\"success\":false,\"message\":\"写操作请使用 POST\"}");
+  return false;
+}
+
 static bool requireModemRouteReady() {
   if (!modemIsBusy()) return true;
   server.send(409, "application/json",
@@ -244,6 +251,7 @@ void handleFlightMode() {
   if (!requireModemRouteReady()) return;
   
   String action = server.arg("action");
+  if (action != "query" && !requirePostMethod()) return;
   String json = "{";
   bool success = false;
   String message = "";
@@ -924,6 +932,7 @@ void handleDataToggle() {
   checkSerial1URC();
 
   String action = server.arg("action");
+  if (action != "query" && !requirePostMethod()) return;
   bool success = false;
   String message;
 
@@ -1089,6 +1098,7 @@ void handleModem() {
   busy = true;
 
   String action = server.arg("action");
+  if ((action == "restart" || action == "hardreset") && !requirePostMethod()) return;
   String json = "{";
   bool success = false;
   String message = "";

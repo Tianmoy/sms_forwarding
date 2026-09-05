@@ -71,16 +71,15 @@ String jsonEscapeAuth(const String &input) {
   return out;
 }
 
-String cookieToken() {
-  if (!server.hasHeader("Cookie")) return "";
-  String cookie = server.header("Cookie");
-  const String key = "sms_session=";
-  int start = cookie.indexOf(key);
-  if (start < 0) return "";
-  start += key.length();
-  int end = cookie.indexOf(';', start);
-  if (end < 0) end = cookie.length();
-  return cookie.substring(start, end);
+String bearerToken() {
+  if (!server.hasHeader("Authorization")) return "";
+  String value = server.header("Authorization");
+  value.trim();
+  const String prefix = "Bearer ";
+  if (!value.startsWith(prefix)) return "";
+  String token = value.substring(prefix.length());
+  token.trim();
+  return token;
 }
 
 bool isExpired(const WebSession &session) {
@@ -90,7 +89,7 @@ bool isExpired(const WebSession &session) {
 }
 
 WebSession *currentSession(bool touch = true) {
-  String token = cookieToken();
+  String token = bearerToken();
   if (token.length() != 32) return nullptr;
   IPAddress remote = server.client().remoteIP();
   for (auto &session : sessions) {
@@ -130,7 +129,7 @@ void sendJson(int status, const String &json) {
 }  // namespace
 
 void authBegin() {
-  static const char *headers[] = {"Cookie", "X-CSRF-Token", "Origin", "Host"};
+  static const char *headers[] = {"Authorization", "Origin", "Host"};
   server.collectHeaders(headers, sizeof(headers) / sizeof(headers[0]));
 }
 
@@ -139,23 +138,17 @@ bool authIsAuthenticated() {
 }
 
 bool authRequire() {
-  if (currentSession()) return true;
+  String token = bearerToken();
+  if (token.length() >= 16) {
+    if (config.apiToken.length() > 0 && secureEquals(token, config.apiToken)) return true;
+    if (currentSession()) return true;
+  }
   sendJson(401, "{\"ok\":false,\"error\":\"unauthorized\"}");
   return false;
 }
 
 bool authRequireCsrf() {
-  WebSession *session = currentSession();
-  if (!session) {
-    sendJson(401, "{\"ok\":false,\"error\":\"unauthorized\"}");
-    return false;
-  }
-  String supplied = server.hasHeader("X-CSRF-Token") ? server.header("X-CSRF-Token") : "";
-  if (!secureEquals(session->csrf, supplied)) {
-    sendJson(403, "{\"ok\":false,\"error\":\"csrf\"}");
-    return false;
-  }
-  return true;
+  return authRequire();
 }
 
 void authInvalidateAll() {
@@ -173,7 +166,7 @@ void handleApiSession() {
     return;
   }
   String json = "{\"authenticated\":true,\"user\":\"" + jsonEscapeAuth(config.webUser) +
-                "\",\"csrf\":\"" + session->csrf + "\",\"mustChangePassword\":" +
+                "\",\"token\":\"" + session->token + "\",\"mustChangePassword\":" +
                 String(config.webPass == DEFAULT_WEB_PASS ? "true" : "false") + "}";
   sendJson(200, json);
 }
@@ -209,9 +202,7 @@ void handleApiLogin() {
   session->createdAt = now;
   session->lastSeenAt = now;
 
-  server.sendHeader("Set-Cookie", "sms_session=" + session->token +
-                                      "; Path=/; HttpOnly; SameSite=Strict; Max-Age=28800");
-  sendJson(200, "{\"ok\":true,\"csrf\":\"" + session->csrf +
+  sendJson(200, "{\"ok\":true,\"token\":\"" + session->token +
                     "\",\"mustChangePassword\":" +
                     String(config.webPass == DEFAULT_WEB_PASS ? "true" : "false") + "}");
 }
@@ -223,6 +214,5 @@ void handleApiLogout() {
     session->token = "";
     session->csrf = "";
   }
-  server.sendHeader("Set-Cookie", "sms_session=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0");
   sendJson(200, "{\"ok\":true}");
 }

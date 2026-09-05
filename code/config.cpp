@@ -1,41 +1,84 @@
 #include "config.h"
+#include <nvs.h>
 #include "web_handlers.h"
 
-// 保存配置到NVS
+// 保存配置到NVS。
+// 空槽位不写键并主动清理旧键:全量写约230个键会把默认20KB的NVS
+// 分区碎片化,导致新字符串(如apiToken)找不到连续条目而写入失败。
+static bool putStrIf(const String &key, const String &value) {
+  if (value.length() > 0) return preferences.putString(key.c_str(), value);
+  return preferences.remove(key.c_str()) || true;
+}
+
 void saveConfig() {
   preferences.begin("sms_config", false);
-  preferences.putString("smtpServer", config.smtpServer);
+  putStrIf("apiToken", config.apiToken);
+  putStrIf("smtpServer", config.smtpServer);
   preferences.putInt("smtpPort", config.smtpPort);
-  preferences.putString("smtpUser", config.smtpUser);
-  preferences.putString("smtpPass", config.smtpPass);
-  preferences.putString("smtpSendTo", config.smtpSendTo);
-  preferences.putString("adminPhone", config.adminPhone);
+  putStrIf("smtpUser", config.smtpUser);
+  putStrIf("smtpPass", config.smtpPass);
+  putStrIf("smtpSendTo", config.smtpSendTo);
+  putStrIf("adminPhone", config.adminPhone);
   preferences.putString("webUser", config.webUser);
   preferences.putString("webPass", config.webPass);
-  preferences.putString("numBlkList", config.numberBlackList);
+  putStrIf("numBlkList", config.numberBlackList);
   for (int i = 0; i < WIFI_NETS_MAX; i++) {
     String prefix = "wifi" + String(i);
-    preferences.putString((prefix + "ssid").c_str(), config.wifiNets[i].ssid);
-    preferences.putString((prefix + "pass").c_str(), config.wifiNets[i].pass);
+    if (config.wifiNets[i].ssid.length() > 0) {
+      preferences.putString((prefix + "ssid").c_str(), config.wifiNets[i].ssid);
+      putStrIf((prefix + "pass"), config.wifiNets[i].pass);
+    } else {
+      preferences.remove((prefix + "ssid").c_str());
+      preferences.remove((prefix + "pass").c_str());
+    }
   }
-  preferences.putUChar("keepaliveDays", config.keepaliveDays);
-  preferences.putString("brandTitle", config.brandTitle);
-  preferences.putString("brandSub", config.brandSub);
-  
-  // 保存推送通道配置
+  putStrIf("brandTitle", config.brandTitle);
+  putStrIf("brandSub", config.brandSub);
+  preferences.putUChar("pollSeconds", config.pollSeconds);
+  for (int i = 0; i < MAX_CUSTOM_TASKS; i++) {
+    String p = "task" + String(i);
+    const CustomTask &t = config.tasks[i];
+    if (t.type != TASK_NONE) {
+      preferences.putUChar((p + "type").c_str(), t.type);
+      putStrIf((p + "name"), t.name);
+      preferences.putUChar((p + "mode").c_str(), t.mode);
+      preferences.putUInt((p + "secs").c_str(), t.intervalSeconds);
+      preferences.putUChar((p + "hour").c_str(), t.hour);
+      preferences.putUChar((p + "min").c_str(), t.minute);
+      preferences.putUChar((p + "wday").c_str(), t.weekday);
+      preferences.putUChar((p + "mday").c_str(), t.dayOfMonth);
+      putStrIf((p + "param"), t.param);
+      preferences.putUChar((p + "hm").c_str(), t.httpMethod);
+      putStrIf((p + "hdrs"), t.headers);
+      putStrIf((p + "tbody"), t.body);
+    } else {
+      static const char *keys[] = {"type", "name", "mode", "secs", "hour", "min",
+                                   "wday", "mday", "param", "hm", "hdrs", "tbody", "interval", "last"};
+      for (const char *k : keys) preferences.remove((p + k).c_str());
+    }
+  }
   for (int i = 0; i < MAX_PUSH_CHANNELS; i++) {
     String prefix = "push" + String(i);
-    preferences.putBool((prefix + "en").c_str(), config.pushChannels[i].enabled);
-    preferences.putUChar((prefix + "type").c_str(), (uint8_t)config.pushChannels[i].type);
-    preferences.putString((prefix + "url").c_str(), config.pushChannels[i].url);
-    preferences.putString((prefix + "name").c_str(), config.pushChannels[i].name);
-    preferences.putString((prefix + "k1").c_str(), config.pushChannels[i].key1);
-    preferences.putString((prefix + "k2").c_str(), config.pushChannels[i].key2);
-    preferences.putString((prefix + "body").c_str(), config.pushChannels[i].customBody);
+    const PushChannel &ch = config.pushChannels[i];
+    bool used = ch.enabled || ch.url.length() || ch.key1.length() || ch.key2.length() || ch.customBody.length();
+    if (used) {
+      preferences.putBool((prefix + "en").c_str(), ch.enabled);
+      preferences.putUChar((prefix + "type").c_str(), (uint8_t)ch.type);
+      putStrIf((prefix + "url"), ch.url);
+      putStrIf((prefix + "name"), ch.name);
+      putStrIf((prefix + "k1"), ch.key1);
+      putStrIf((prefix + "k2"), ch.key2);
+      putStrIf((prefix + "body"), ch.customBody);
+    } else {
+      static const char *keys[] = {"en", "type", "url", "name", "k1", "k2", "body"};
+      for (const char *k : keys) preferences.remove((prefix + k).c_str());
+    }
   }
-  
+
   preferences.end();
-  logCaptureLn(String("配置已保存"));
+  nvs_stats_t st = {};
+  nvs_get_stats("nvs", &st);
+  logCaptureLn(String("配置已保存, NVS剩余条目=") + String(st.free_entries));
 }
 
 // 从NVS加载配置
@@ -65,9 +108,29 @@ void loadConfig() {
       logCaptureLn(String("已迁移旧版WiFi配置到网络列表: ") + legacySsid);
     }
   }
-  config.keepaliveDays = preferences.getUChar("keepaliveDays", 0);
   config.brandTitle = preferences.getString("brandTitle", "SMS FWD");
   config.brandSub = preferences.getString("brandSub", "愿你天黑有灯，下雨有伞");
+  for (int i = 0; i < MAX_CUSTOM_TASKS; i++) {
+    String p = "task" + String(i);
+    config.tasks[i].type = preferences.getUChar((p + "type").c_str(), TASK_NONE);
+    config.tasks[i].name = preferences.getString((p + "name").c_str(), "任务" + String(i + 1));
+    config.tasks[i].mode = preferences.getUChar((p + "mode").c_str(), 0);
+    config.tasks[i].intervalSeconds = preferences.getUInt((p + "secs").c_str(), 0);
+    if (config.tasks[i].intervalSeconds == 0) {
+      uint32_t legacyHours = preferences.getUInt((p + "interval").c_str(), 0);
+      if (legacyHours > 0) config.tasks[i].intervalSeconds = legacyHours * 3600UL;
+    }
+    config.tasks[i].hour = preferences.getUChar((p + "hour").c_str(), 1);
+    config.tasks[i].minute = preferences.getUChar((p + "min").c_str(), 30);
+    config.tasks[i].weekday = preferences.getUChar((p + "wday").c_str(), 1);
+    config.tasks[i].dayOfMonth = preferences.getUChar((p + "mday").c_str(), 1);
+    config.tasks[i].param = preferences.getString((p + "param").c_str(), "");
+    config.tasks[i].httpMethod = preferences.getUChar((p + "hm").c_str(), 0);
+    config.tasks[i].headers = preferences.getString((p + "hdrs").c_str(), "");
+    config.tasks[i].body = preferences.getString((p + "tbody").c_str(), "");
+  }
+  config.pollSeconds = preferences.getUChar("pollSeconds", 5);
+  config.apiToken = preferences.getString("apiToken", "");
   
   // 加载推送通道配置
   for (int i = 0; i < MAX_PUSH_CHANNELS; i++) {
@@ -142,15 +205,26 @@ String getDeviceUrl() {
   return "http://" + WiFi.localIP().toString() + "/";
 }
 
-uint32_t configLastKeepaliveDay() {
-  preferences.begin("sms_config", true);
-  uint32_t day = preferences.getUInt("kaLastDay", 0);
-  preferences.end();
-  return day;
+// lastRun 缓存:调度器每分钟询问全部任务,避免反复打开 NVS 读 flash
+static uint32_t s_taskLastRunCache[MAX_CUSTOM_TASKS];
+static bool s_taskLastRunLoaded[MAX_CUSTOM_TASKS];
+
+uint32_t configTaskLastRun(int index) {
+  if (index < 0 || index >= MAX_CUSTOM_TASKS) return 0;
+  if (!s_taskLastRunLoaded[index]) {
+    preferences.begin("sms_config", true);
+    s_taskLastRunCache[index] = preferences.getUInt(("task" + String(index) + "last").c_str(), 0);
+    preferences.end();
+    s_taskLastRunLoaded[index] = true;
+  }
+  return s_taskLastRunCache[index];
 }
 
-void configRecordKeepalive(uint32_t day) {
+void configRecordTaskRun(int index, uint32_t epoch) {
+  if (index < 0 || index >= MAX_CUSTOM_TASKS) return;
   preferences.begin("sms_config", false);
-  preferences.putUInt("kaLastDay", day);
+  preferences.putUInt(("task" + String(index) + "last").c_str(), epoch);
   preferences.end();
+  s_taskLastRunCache[index] = epoch;
+  s_taskLastRunLoaded[index] = true;
 }

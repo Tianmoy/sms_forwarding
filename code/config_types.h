@@ -19,13 +19,36 @@ enum PushType {
 };
 
 // 最大推送通道数
-#define MAX_PUSH_CHANNELS 20
+#define MAX_PUSH_CHANNELS 10
 
 // WiFi 网络:第 1 个为主用,其余按序备用
-#define WIFI_NETS_MAX 4
+#define WIFI_NETS_MAX 5
 struct WifiNet {
   String ssid;
   String pass;
+};
+
+// 自定义任务类型
+enum CustomTaskType {
+  TASK_NONE = 0,
+  TASK_RESTART = 1,   // 定时重启设备
+  TASK_AT = 2,        // 定时执行 AT 命令
+  TASK_HTTP = 3       // 定时访问 HTTP URL(GET)
+};
+#define MAX_CUSTOM_TASKS 10
+struct CustomTask {
+  uint8_t type;            // CustomTaskType
+  String name;             // 任务名称
+  uint8_t mode;            // 0=间隔 1=每天 2=每周 3=每月
+  uint32_t intervalSeconds;  // 间隔模式:执行间隔秒,0=停用
+  uint8_t hour;            // 日历模式:时
+  uint8_t minute;          // 日历模式:分
+  uint8_t weekday;         // 每周模式:星期(0=周日)
+  uint8_t dayOfMonth;      // 每月模式:几号(1-28)
+  String param;            // AT命令或URL
+  uint8_t httpMethod;      // HTTP任务:0=GET 1=POST
+  String headers;          // HTTP任务:自定义头,每行 "Name: value"
+  String body;             // HTTP任务:POST 请求体
 };
 
 // 推送通道配置（通用设计，支持多种推送方式）
@@ -54,9 +77,11 @@ struct Config {
   String wifiSsid;     // 兼容字段:仅用于旧键迁移
   String wifiPass;
   WifiNet wifiNets[WIFI_NETS_MAX];
-  uint8_t keepaliveDays;  // 自动Ping保号间隔天数，0=关闭
   String brandTitle;      // 界面品牌主标题
   String brandSub;        // 界面品牌副标题
+  CustomTask tasks[MAX_CUSTOM_TASKS];
+  uint8_t pollSeconds;      // 网页状态刷新间隔秒,默认5
+  String apiToken;          // API 访问令牌,空=关闭
 };
 
 // 默认Web管理账号密码
