@@ -3,7 +3,6 @@
 #include "config.h"
 #include "modem.h"
 #include "push.h"
-#include "wifi_config.h"
 #include "auth.h"
 #include "esim_manager.h"
 #include "sim_manager.h"
@@ -76,6 +75,48 @@ static bool requireModemRouteReady() {
   server.send(409, "application/json",
               "{\"success\":false,\"message\":\"模组正在初始化或处理其他通信，请稍后重试\"}");
   return false;
+}
+
+// 依次尝试已配置的 WiFi 网络,成功返回 true(需在 HTTP 服务启动后调用)
+bool wifiConnectAll() {
+  if (WiFi.getMode() != WIFI_STA) WiFi.mode(WIFI_STA);
+  WiFi.setSleep(false);
+  WiFi.setAutoReconnect(true);
+  WiFi.setScanMethod(WIFI_FAST_SCAN);
+  WiFi.setSortMethod(WIFI_CONNECT_AP_BY_SIGNAL);
+  for (int i = 0; i < WIFI_NETS_MAX; i++) {
+    if (config.wifiNets[i].ssid.length() == 0) continue;
+    logCaptureLn(String("尝试连接WiFi: ") + config.wifiNets[i].ssid);
+    WiFi.disconnect(true);
+    delay(200);
+    WiFi.begin(config.wifiNets[i].ssid.c_str(), config.wifiNets[i].pass.c_str());
+    unsigned long start = millis();
+    while (WiFi.status() != WL_CONNECTED && millis() - start < 12000) {
+      server.handleClient();
+      delay(50);
+    }
+    if (WiFi.status() == WL_CONNECTED) return true;
+    logCaptureLn(String("WiFi 连接失败: ") + config.wifiNets[i].ssid);
+  }
+  return false;
+}
+
+// 无可用WiFi时开放配置热点,供首次配置使用
+void wifiStartAp() {
+  WiFi.mode(WIFI_AP);
+  bool ok = WiFi.softAP("sms-forwarder");
+  if (ok) {
+    logCaptureLn(String("⚠️ 无可用WiFi，已开启配置热点 sms-forwarder，请连接后访问 http://192.168.4.1"));
+  } else {
+    logCaptureLn(String("⚠️ 配置热点开启失败，设备将持续重试"));
+    for (int i = 0; i < 3; i++) {
+      delay(1000);
+      if (WiFi.softAP("sms-forwarder")) {
+        logCaptureLn(String("配置热点重试成功 sms-forwarder，http://192.168.4.1"));
+        return;
+      }
+    }
+  }
 }
 
 // 处理配置页面请求
@@ -1163,20 +1204,8 @@ void handleWifi() {
   String action = server.arg("action");
   if (action == "restart") {
     logCaptureLn(String("网页端请求重启WiFi..."));
-    server.send(200, "application/json", "{\"success\":true,\"message\":\"WiFi 正在重启，请等待约 5 秒后刷新页面\"}");
-    WiFi.disconnect(true);
-    delay(500);
-    WiFi.setSleep(false);
-    WiFi.setAutoReconnect(true);
-    WiFi.setScanMethod(WIFI_FAST_SCAN);
-    WiFi.begin(WIFI_SSID, WIFI_PASS);
-    logCaptureLn(String("正在重新连接WiFi: " + String(WIFI_SSID)));
-    unsigned long start = millis();
-    while (WiFi.status() != WL_CONNECTED && millis() - start < 15000) {
-      delay(50);
-      server.handleClient();
-    }
-    if (WiFi.status() == WL_CONNECTED) {
+    server.send(200, "application/json", "{\"success\":true,\"message\":\"WiFi 正在重启，请等待约 15 秒后刷新页面\"}");
+    if (wifiConnectAll()) {
       logCaptureLn(String("WiFi 重连成功, IP: " + WiFi.localIP().toString()));
     } else {
       logCaptureLn(String("WiFi 重连失败，将在后台持续尝试"));

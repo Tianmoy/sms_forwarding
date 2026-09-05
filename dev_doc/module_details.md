@@ -479,12 +479,3 @@ SPA 页面中的 `%PLACEHOLDER%` 在 `handleRoot()` 中通过 `html.replace()` �
 
 ---
 
-## wifi_config.h — WiFi 凭据
-
-```cpp
-#define WIFI_SSID "liuwifi"
-#define WIFI_PASS "Bairuiqin"
-```
-
-**修改**: 直接编辑此文件填入实际 WiFi 信息。  
-**注意**: 此文件包含明文密码，请勿提交到公开仓库。

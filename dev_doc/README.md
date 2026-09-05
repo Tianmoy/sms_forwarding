@@ -69,8 +69,6 @@ code/
 ├── operator_manager.*    # 异步扫描、手动选网与自动选网任务
 ├── web_handlers.h / .cpp # HTTP 请求处理器 + 日志环形缓冲区
 ├── web_html.h / .cpp     # SPA HTML 页面模板（单页 10 个面板）
-├── wifi_config.example.h # 可提交的 Wi-Fi 配置模板
-└── wifi_config.h         # 本地 Wi-Fi 凭据（Git 忽略）
 ```
 
 ## 编译与烧录

@@ -21,6 +21,13 @@ enum PushType {
 // 最大推送通道数
 #define MAX_PUSH_CHANNELS 5
 
+// WiFi 网络:第 1 个为主用,其余按序备用
+#define WIFI_NETS_MAX 4
+struct WifiNet {
+  String ssid;
+  String pass;
+};
+
 // 推送通道配置（通用设计，支持多种推送方式）
 struct PushChannel {
   bool enabled;           // 是否启用
@@ -44,8 +51,9 @@ struct Config {
   String webUser;      // Web管理账号
   String webPass;      // Web管理密码
   String numberBlackList;  // 号码黑名单（换行符分隔）
-  String wifiSsid;     // 运行时WiFi配置（空则回退编译期 wifi_config.h）
+  String wifiSsid;     // 兼容字段:仅用于旧键迁移
   String wifiPass;
+  WifiNet wifiNets[WIFI_NETS_MAX];
   uint8_t keepaliveDays;  // 自动Ping保号间隔天数，0=关闭
 };
 

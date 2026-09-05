@@ -301,26 +301,41 @@ void handleApiOperatorAuto() {
 
 void handleApiWifiPost() {
   if (!authRequireCsrf()) return;
-  if (server.hasArg("clear")) {
-    config.wifiSsid = "";
-    config.wifiPass = "";
+  if (server.hasArg("clearAll")) {
+    for (int i = 0; i < WIFI_NETS_MAX; ++i) {
+      config.wifiNets[i].ssid = "";
+      config.wifiNets[i].pass = "";
+    }
     saveConfig();
-    sendJson(200, "{\"ok\":true,\"message\":\"已清除网页WiFi配置，重启后回退编译期配置\"}");
+    sendJson(200, "{\"ok\":true,\"message\":\"已清空全部WiFi，重启后设备开启配置热点 sms-forwarder\"}");
     delay(800);
     ESP.restart();
     return;
   }
-  String ssid = server.arg("wifiSsid");
-  String pass = server.arg("wifiPass");
-  ssid.trim();
-  if (ssid.length() == 0 || ssid.length() > 32 || pass.length() > 64) {
-    sendJson(400, "{\"ok\":false,\"message\":\"WiFi 名称或密码长度无效\"}");
+  bool anySsid = false;
+  WifiNet updated[WIFI_NETS_MAX];
+  for (int i = 0; i < WIFI_NETS_MAX; ++i) {
+    String ssid = server.arg("wifiSsid" + String(i));
+    String pass = server.arg("wifiPass" + String(i));
+    ssid.trim();
+    if (ssid.length() > 32 || pass.length() > 64) {
+      sendJson(400, "{\"ok\":false,\"message\":\"WiFi 名称或密码长度无效\"}");
+      return;
+    }
+    if (pass.length() == 0 && ssid.length() > 0 && ssid == config.wifiNets[i].ssid) {
+      pass = config.wifiNets[i].pass;  // 未修改的行保留旧密码
+    }
+    if (ssid.length() > 0) anySsid = true;
+    updated[i].ssid = ssid;
+    updated[i].pass = pass;
+  }
+  if (!anySsid) {
+    sendJson(400, "{\"ok\":false,\"message\":\"至少需要填写一个 WiFi 名称\"}");
     return;
   }
-  config.wifiSsid = ssid;
-  config.wifiPass = pass;
+  for (int i = 0; i < WIFI_NETS_MAX; ++i) config.wifiNets[i] = updated[i];
   saveConfig();
-  sendJson(200, "{\"ok\":true,\"message\":\"WiFi 已保存，设备即将重启生效\"}");
+  sendJson(200, "{\"ok\":true,\"message\":\"WiFi 已保存，设备即将重启并按主备顺序连接\"}");
   delay(800);
   ESP.restart();
 }
@@ -384,11 +399,15 @@ void handleApiConfigGet() {
              ",\"key2Configured\":" + String(ch.key2.length() ? "true" : "false") +
              ",\"customBody\":\"" + jsonEscapeApi(ch.customBody) + "\"}";
    }
-   json += "],\"wifi\":{\"ssid\":\"" + jsonEscapeApi(config.wifiSsid) +
-           "\",\"passSet\":" + String(config.wifiPass.length() ? "true" : "false") +
-           ",\"source\":\"" + String(config.wifiSsid.length() ? "web" : "build") +
-           "\"},\"keepaliveDays\":" + String(config.keepaliveDays) + "}";
-   sendJson(200, json);
+  json += "],\"wifi\":{\"nets\":[";
+  for (int i = 0; i < WIFI_NETS_MAX; ++i) {
+    if (i) json += ',';
+    json += "{\"ssid\":\"" + jsonEscapeApi(config.wifiNets[i].ssid) +
+            "\",\"passSet\":" + String(config.wifiNets[i].pass.length() ? "true" : "false") + "}";
+  }
+  json += "],\"apMode\":" + String(WiFi.getMode() == WIFI_AP ? "true" : "false") +
+          "},\"keepaliveDays\":" + String(config.keepaliveDays) + "}";
+  sendJson(200, json);
 }
 
 void handleApiConfigPost() {

@@ -1,5 +1,4 @@
 #include "globals.h"
-#include "wifi_config.h"
 #include "config.h"
 #include "web_handlers.h"
 #include "modem.h"
@@ -30,48 +29,11 @@ void setup() {
     logCaptureLn(String("⚠️ 短信持久化存储初始化失败"));
   }
 
-  // ---- WiFi 连接 ----
+  // ---- HTTP 服务先行启动,保证任意 WiFi 状态下都可访问管理台 ----
+  // WebServer 依赖 WiFi 协议栈的事件队列,必须先初始化 WiFi 再起服务
+  // persistent(false): 凭据只由本固件 NVS 管理,防止 esp 自动重连旧网络干扰热点
+  WiFi.persistent(false);
   WiFi.mode(WIFI_STA);
-  WiFi.setSleep(false);                    // 保持射频常开,后台响应零延迟
-  WiFi.setAutoReconnect(true);             // 断线后自动重连
-  WiFi.setScanMethod(WIFI_FAST_SCAN);
-  WiFi.setSortMethod(WIFI_CONNECT_AP_BY_SIGNAL);
-
-  // 优先使用网页配置的WiFi,失败则回退编译期凭据,保证设备不会失联
-  const bool hasRuntimeWifi = config.wifiSsid.length() > 0;
-  const char* primarySsid = hasRuntimeWifi ? config.wifiSsid.c_str() : WIFI_SSID;
-  const char* primaryPass = hasRuntimeWifi ? config.wifiPass.c_str() : WIFI_PASS;
-  WiFi.begin(primarySsid, primaryPass);
-  logCaptureLn(String("连接wifi: ") + primarySsid);
-
-  unsigned long wifiStart = millis();
-  while (WiFi.status() != WL_CONNECTED && millis() - wifiStart < 20000) {
-    blink_short(200);
-  }
-
-  if (WiFi.status() != WL_CONNECTED && hasRuntimeWifi) {
-    logCaptureLn(String("⚠️ 网页配置的WiFi连接失败，回退编译期WiFi: ") + WIFI_SSID);
-    WiFi.disconnect(true);
-    delay(500);
-    WiFi.begin(WIFI_SSID, WIFI_PASS);
-    wifiStart = millis();
-    while (WiFi.status() != WL_CONNECTED && millis() - wifiStart < 20000) {
-      blink_short(200);
-    }
-  }
-
-  if (WiFi.status() == WL_CONNECTED) {
-    logCaptureLn(String("wifi已连接"));
-    logCapture(String("IP地址: "));
-    logCaptureLn(WiFi.localIP().toString());
-    logCapture(String("信号强度(RSSI): "));
-    logCaptureLn(String(WiFi.RSSI()) + " dBm");
-  } else {
-    logCaptureLn(String("⚠️ WiFi连接超时，即将重启重试..."));
-    delay(1000);
-    ESP.restart();
-  }
-
   authBegin();
   server.on("/", HTTP_GET, handleRoot);
   server.on("/tools", HTTP_GET, handleRoot);
@@ -88,6 +50,17 @@ void setup() {
   registerApiRoutes();
   server.begin();
   logCaptureLn(String("HTTP服务器已启动"));
+
+  // ---- WiFi:依次尝试主备网络,全部失败则开启配置热点 ----
+  if (wifiConnectAll()) {
+    logCaptureLn(String("wifi已连接"));
+    logCapture(String("IP地址: "));
+    logCaptureLn(WiFi.localIP().toString());
+    logCapture(String("信号强度(RSSI): "));
+    logCaptureLn(String(WiFi.RSSI()) + " dBm");
+  } else {
+    wifiStartAp();
+  }
 
   // ---- NTP 时间同步 ----
   logCaptureLn(String("正在同步NTP时间..."));
@@ -154,7 +127,25 @@ void loop() {
     checkSerial1URC();
   }
   checkKeepalive();
+  checkWifiFailover();
   delay(1);
+}
+
+// WiFi 断开超过 2 分钟时轮换到下一个已配置网络(仅 STA 模式)
+static void checkWifiFailover() {
+  static unsigned long wifiDownSince = 0;
+  if (WiFi.status() == WL_CONNECTED || WiFi.getMode() != WIFI_STA) {
+    wifiDownSince = 0;
+    return;
+  }
+  if (wifiDownSince == 0) {
+    wifiDownSince = millis();
+    return;
+  }
+  if (millis() - wifiDownSince < 120000) return;
+  logCaptureLn(String("WiFi 持续断开超过 2 分钟，尝试切换到备用网络"));
+  wifiDownSince = 0;
+  wifiConnectAll();
 }
 
 // 自动保号:临时激活数据连接并 Ping,产生真实流量后关闭

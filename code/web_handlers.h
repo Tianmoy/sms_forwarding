@@ -22,6 +22,8 @@ void handleSave();
 void handleQuery();
 void handleFlightMode();
 void handleDataToggle();
+bool wifiConnectAll();
+void wifiStartAp();
 void handleATCommand();
 void handleSendSms();
 void handlePing();

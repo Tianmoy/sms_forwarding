@@ -147,10 +147,4 @@ ESP32C3 与 ML307R-DC 通过串口（UART）连接，接线如下：
 
 重构版的嵌入式管理台超过默认应用分区容量，4MB ESP32-C3 请使用 `PartitionScheme=no_ota`（2MB 应用 + 2MB LittleFS）编译。当前固件不包含 OTA 更新功能。
 
-首次编译前，复制 Wi-Fi 配置模板并在本地填写实际信息：
-
-```bash
-cp code/wifi_config.example.h code/wifi_config.h
-```
-
-`code/wifi_config.h` 已被 Git 忽略，真实 Wi-Fi 凭据不会进入仓库。GitHub Actions 会自动使用示例配置完成无凭据编译检查。
+Wi-Fi 通过网页配置（系统设置 → WiFi 网络），支持 1 主用 + 3 备用，无需编译期凭据。首次烧录或全部网络连接失败时，设备自动开启开放配置热点 `sms-forwarder`，连接后访问 `http://192.168.4.1` 完成配置。

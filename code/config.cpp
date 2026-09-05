@@ -13,8 +13,11 @@ void saveConfig() {
   preferences.putString("webUser", config.webUser);
   preferences.putString("webPass", config.webPass);
   preferences.putString("numBlkList", config.numberBlackList);
-  preferences.putString("webWifiSsid", config.wifiSsid);
-  preferences.putString("webWifiPass", config.wifiPass);
+  for (int i = 0; i < WIFI_NETS_MAX; i++) {
+    String prefix = "wifi" + String(i);
+    preferences.putString((prefix + "ssid").c_str(), config.wifiNets[i].ssid);
+    preferences.putString((prefix + "pass").c_str(), config.wifiNets[i].pass);
+  }
   preferences.putUChar("keepaliveDays", config.keepaliveDays);
   
   // 保存推送通道配置
@@ -45,8 +48,21 @@ void loadConfig() {
   config.webUser = preferences.getString("webUser", DEFAULT_WEB_USER);
   config.webPass = preferences.getString("webPass", DEFAULT_WEB_PASS);
   config.numberBlackList = preferences.getString("numBlkList", "");
-  config.wifiSsid = preferences.getString("webWifiSsid", "");
-  config.wifiPass = preferences.getString("webWifiPass", "");
+  for (int i = 0; i < WIFI_NETS_MAX; i++) {
+    String prefix = "wifi" + String(i);
+    config.wifiNets[i].ssid = preferences.getString((prefix + "ssid").c_str(), "");
+    config.wifiNets[i].pass = preferences.getString((prefix + "pass").c_str(), "");
+  }
+  // 迁移旧版单 WiFi 键到网络列表首位
+  if (config.wifiNets[0].ssid.length() == 0) {
+    String legacySsid = preferences.getString("webWifiSsid", "");
+    String legacyPass = preferences.getString("webWifiPass", "");
+    if (legacySsid.length() > 0) {
+      config.wifiNets[0].ssid = legacySsid;
+      config.wifiNets[0].pass = legacyPass;
+      logCaptureLn(String("已迁移旧版WiFi配置到网络列表: ") + legacySsid);
+    }
+  }
   config.keepaliveDays = preferences.getUChar("keepaliveDays", 0);
   
   // 加载推送通道配置
