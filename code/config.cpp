@@ -19,6 +19,8 @@ void saveConfig() {
     preferences.putString((prefix + "pass").c_str(), config.wifiNets[i].pass);
   }
   preferences.putUChar("keepaliveDays", config.keepaliveDays);
+  preferences.putString("brandTitle", config.brandTitle);
+  preferences.putString("brandSub", config.brandSub);
   
   // 保存推送通道配置
   for (int i = 0; i < MAX_PUSH_CHANNELS; i++) {
@@ -64,6 +66,8 @@ void loadConfig() {
     }
   }
   config.keepaliveDays = preferences.getUChar("keepaliveDays", 0);
+  config.brandTitle = preferences.getString("brandTitle", "SMS FWD");
+  config.brandSub = preferences.getString("brandSub", "愿你天黑有灯，下雨有伞");
   
   // 加载推送通道配置
   for (int i = 0; i < MAX_PUSH_CHANNELS; i++) {

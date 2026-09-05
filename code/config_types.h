@@ -19,7 +19,7 @@ enum PushType {
 };
 
 // 最大推送通道数
-#define MAX_PUSH_CHANNELS 5
+#define MAX_PUSH_CHANNELS 20
 
 // WiFi 网络:第 1 个为主用,其余按序备用
 #define WIFI_NETS_MAX 4
@@ -55,6 +55,8 @@ struct Config {
   String wifiPass;
   WifiNet wifiNets[WIFI_NETS_MAX];
   uint8_t keepaliveDays;  // 自动Ping保号间隔天数，0=关闭
+  String brandTitle;      // 界面品牌主标题
+  String brandSub;        // 界面品牌副标题
 };
 
 // 默认Web管理账号密码

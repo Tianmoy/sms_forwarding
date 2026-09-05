@@ -379,6 +379,23 @@ void handleApiPushTest() {
   sendJson(200, "{\"ok\":true,\"message\":\"已发送测试消息（" + String(sent) + " 个通道），请查收\"}");
 }
 
+void handleApiFactoryReset() {
+  if (!authRequireCsrf()) return;
+  sendJson(200, "{\"ok\":true,\"message\":\"正在恢复出厂设置，设备即将重启并开启配置热点\"}");
+  delay(800);
+  preferences.begin("sms_config", false);
+  preferences.clear();
+  preferences.end();
+  smsStoreClear();
+  ESP.restart();
+}
+
+// 公开的品牌信息(仅展示用途,不含敏感数据)
+void handleApiBrand() {
+  sendJson(200, "{\"ok\":true,\"title\":\"" + jsonEscapeApi(config.brandTitle) +
+                    "\",\"sub\":\"" + jsonEscapeApi(config.brandSub) + "\"}");
+}
+
 void handleApiConfigGet() {
   if (!authRequire()) return;
   String json;
@@ -411,7 +428,9 @@ void handleApiConfigGet() {
             "\",\"passSet\":" + String(config.wifiNets[i].pass.length() ? "true" : "false") + "}";
   }
   json += "],\"apMode\":" + String(WiFi.getMode() == WIFI_AP ? "true" : "false") +
-          "},\"keepaliveDays\":" + String(config.keepaliveDays) + "}";
+          "},\"keepaliveDays\":" + String(config.keepaliveDays) +
+          ",\"brand\":{\"title\":\"" + jsonEscapeApi(config.brandTitle) +
+          "\",\"sub\":\"" + jsonEscapeApi(config.brandSub) + "\"}}";
   sendJson(200, json);
 }
 
@@ -446,6 +465,18 @@ void handleApiConfigPost() {
   if (server.hasArg("keepaliveDays")) {
     config.keepaliveDays = (uint8_t)constrain(server.arg("keepaliveDays").toInt(), 0, 90);
   }
+  if (server.hasArg("brandTitle")) {
+    String t = server.arg("brandTitle");
+    t.trim();
+    if (t.length() > 24) t = t.substring(0, 24);
+    config.brandTitle = t;
+  }
+  if (server.hasArg("brandSub")) {
+    String s = server.arg("brandSub");
+    s.trim();
+    if (s.length() > 40) s = s.substring(0, 40);
+    config.brandSub = s;
+  }
 
   if (server.hasArg("smtpServer")) config.smtpServer = server.arg("smtpServer").substring(0, 128);
   if (server.hasArg("smtpPort")) config.smtpPort = constrain(server.arg("smtpPort").toInt(), 1, 65535);
@@ -453,8 +484,17 @@ void handleApiConfigPost() {
   if (server.hasArg("smtpPass") && server.arg("smtpPass").length()) config.smtpPass = server.arg("smtpPass").substring(0, 192);
   if (server.hasArg("smtpSendTo")) config.smtpSendTo = server.arg("smtpSendTo").substring(0, 128);
 
+  // pushCount 存在时,超出部分视为已删除的通道并清空
+  int pushCount = -1;
+  if (server.hasArg("pushCount")) {
+    pushCount = constrain(server.arg("pushCount").toInt(), 0, MAX_PUSH_CHANNELS);
+  }
   for (int i = 0; i < MAX_PUSH_CHANNELS; ++i) {
     String p = "push" + String(i);
+    if (pushCount >= 0 && i >= pushCount) {
+      config.pushChannels[i] = PushChannel();
+      continue;
+    }
     bool channelPresent = server.hasArg(p + "en") || server.hasArg(p + "type") ||
                           server.hasArg(p + "name") || server.hasArg(p + "url") ||
                           server.hasArg(p + "k1") || server.hasArg(p + "k2") ||
@@ -500,4 +540,6 @@ void registerApiRoutes() {
   server.on("/api/wifi", HTTP_POST, handleApiWifiPost);
   server.on("/api/reboot", HTTP_POST, handleApiReboot);
   server.on("/api/push/test", HTTP_POST, handleApiPushTest);
+  server.on("/api/factory/reset", HTTP_POST, handleApiFactoryReset);
+  server.on("/api/brand", HTTP_GET, handleApiBrand);
 }
