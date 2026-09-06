@@ -130,7 +130,7 @@ const char* htmlPage = R"rawliteral(<!doctype html>
 <section id="view-esim" class="view" hidden>
 <div class="section-head"><div><h2>SIM / eSIM</h2><p>查看模组支持的卡功能，并安全切换当前配置。</p></div><div class="toolbar"><button id="simRecheckBtn" class="btn primary" type="button">重新识别 SIM</button><button id="refreshProfiles" class="btn" type="button">刷新卡功能</button></div></div>
 <article id="switchProgress" class="card progress-card" hidden><div class="progress-head"><div><p class="eyebrow">SWITCH OPERATION</p><h3 id="switchTitle">正在切换卡功能</h3></div><span id="switchPercent" class="badge warn">0%</span></div><div class="progress-track"><i id="switchBar"></i></div><p id="switchMessage" role="status">正在提交切换请求…</p></article>
-<article id="simCard" class="current-sim card" data-state="unknown"><div class="sim-main"><div class="sim-main-head"><p class="eyebrow">ACTIVE CARD</p><span id="simCardBadge" class="badge warn">检测中</span></div><strong id="activeProfileName">正在查询</strong><p id="activeProfileNote">等待模组返回…</p></div><div class="sim-fact"><span>手机号</span><strong id="activePhone">--</strong></div><div class="sim-fact"><span>ICCID</span><strong id="activeIccid">--</strong></div><div class="sim-fact"><span>运营商</span><strong id="activeNetwork">--</strong></div></article>
+<article id="simCard" class="current-sim card" data-state="unknown"><div class="sim-main"><div class="sim-main-head"><p class="eyebrow">ACTIVE CARD</p><span id="simCardBadge" class="badge warn">检测中</span></div><strong id="activeProfileName">正在查询</strong><p id="activeProfileNote">等待模组返回…</p></div><div class="sim-fact"><span>手机号</span><strong id="activePhone">--</strong></div><div class="sim-fact"><span>ICCID</span><strong id="activeIccid">--</strong></div><div class="sim-fact"><span>运营商</span><strong id="activeNetwork">--</strong></div><div class="sim-fact"><span>EID</span><strong id="activeEid">--</strong></div></article>
 <div class="card-title"><h3>可用卡功能</h3><span id="profileCount" class="badge">0 个</span></div><div id="profileList" class="profile-grid"><div class="card empty">正在读取卡功能列表…</div></div>
 <section class="operator-section" aria-labelledby="operatorHeading">
 <div class="operator-head"><div><p class="eyebrow">CELLULAR REGISTRATION</p><h3 id="operatorHeading">运营商选网</h3><p>扫描当前位置可见网络，手动选择驻留运营商，或恢复由 SIM 自动选择。扫描通常需要 1–3 分钟。</p></div><div class="btn-row"><button id="operatorAuto" class="btn" type="button">自动选择</button><button id="operatorScan" class="btn primary" type="button">扫描网络</button></div></div>
@@ -264,6 +264,7 @@ if(prof){
   setText('#activePhone',sim.phone||'未写入卡内');
   setText('#activeIccid',sim.iccidTail?'尾号 '+sim.iccidTail:'—');
   setText('#activeNetwork',sim.operator||'—');
+  setText('#activeEid',pick(sim.eid,'—'));
   var pb=$('#simCardBadge');if(pb&&sim.state==='ready'){pb.textContent='已就绪';pb.className='badge good'}
   try{if(localStorage.getItem('lastSimProf')!==prof)localStorage.setItem('lastSimProf',prof)}catch(_){}
 }

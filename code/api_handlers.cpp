@@ -35,6 +35,11 @@ void handleApiStatus() {
   bool rsrqKnown = signalKnown && simManagerSignalRsrqKnown();
   String rsrpJson = signalKnown ? String(simManagerSignalRsrpDbm()) : String("null");
   String rsrpRawJson = signalKnown ? String(simManagerSignalRsrpRaw()) : String("null");
+  String eidCache;
+  if (esimProfilesLoaded()) {
+    String eidErr;
+    eidCache = esimGetEid(eidErr);
+  }
   String rsrqJson = rsrqKnown
                         ? String(simManagerSignalRsrqTenthsDb() / 10.0f, 1)
                         : String("null");
@@ -63,7 +68,7 @@ void handleApiStatus() {
          ",\"message\":\"" + jsonEscape(simManagerMessage()) +
          "\",\"generation\":" + String(simManagerGeneration()) +
          ",\"changedAt\":" + String(simManagerChangedAt()) + ",\"profile\":\"" +
-         jsonEscape(activeProfile) + "\",\"iccidTail\":\"" + simManagerIccidTail() + "\",\"phone\":\"" + jsonEscape(simPhoneNumber) + "\",\"operator\":\"" + jsonEscape(networkOperator) + "\",\"name\":\"" + jsonEscape(activeProfile) +
+          jsonEscape(activeProfile) + "\",\"iccidTail\":\"" + simManagerIccidTail() + "\",\"phone\":\"" + jsonEscape(simPhoneNumber) + "\",\"operator\":\"" + jsonEscape(networkOperator) + "\",\"eid\":\"" + jsonEscape(eidCache) + "\",\"name\":\"" + jsonEscape(activeProfile) +
          "\",\"profileName\":\"" + jsonEscape(activeProfile) + "\"},\"sms\":{\"stored\":" + String(smsStoreCount()) +
          ",\"unread\":" + String(smsStoreUnread()) + ",\"capacity\":50},\"push\":{\"enabled\":" +
          String(enabledPush) + "},\"job\":" + esimJobJson() + "}";
@@ -402,6 +407,12 @@ void handleApiSmsSend() {
 
 void handleApiConfigGet() {
   if (!authRequire()) return;
+  String eidCache;
+  if (esimProfilesLoaded()) {
+    String eidErr;
+    eidCache = esimGetEid(eidErr);
+  }
+
   String json;
   json.reserve(4096);
   json = "{\"ok\":true,\"webUser\":\"" + jsonEscape(config.webUser) +
