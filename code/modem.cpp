@@ -121,52 +121,6 @@ void modemInit() {
   if (!sendATandWaitOK("AT+CMEE=1", 1200)) {
     logCaptureLn(String("⚠️ 无法启用数值 CME 错误，SIM 检测将继续重试"));
   }
-
-  //判断型号，做一些特定操作
-  bool need_set_CGACT = true;
-  String resp = sendATCommand("ATI", 2000);
-  logCaptureLn(String("ATI响应: " + resp));
-  if (resp.indexOf("OK") >= 0) {
-    // 解析ATI响应
-    String manufacturer = "未知";
-    String model = "未知";
-    String version = "未知";
-    
-    // 按行解析
-    int lineStart = 0;
-    int lineNum = 0;
-    for (int i = 0; i < resp.length(); i++) {
-      if (resp.charAt(i) == '\n' || i == resp.length() - 1) {
-        String line = resp.substring(lineStart, i);
-        line.trim();
-        if (line.length() > 0 && line != "ATI" && line != "OK") {
-          lineNum++;
-          if (lineNum == 1) manufacturer = line;
-          else if (lineNum == 2) model = line;
-          else if (lineNum == 3) version = line;
-        }
-        lineStart = i + 1;
-      }
-    }
-    //这个模组这条命令有bug
-    if(model == "ML307Y") need_set_CGACT = false;
-  }
-
-  if(need_set_CGACT) {
-    bool dataDisabled = false;
-    for (uint8_t attempt = 0; attempt < 3; ++attempt) {
-      if (sendATandWaitOK("AT+CGACT=0,1", 5000)) {
-        dataDisabled = true;
-        break;
-      }
-      logCaptureLn(String("设置CGACT失败，重试..."));
-      blink_short(250);
-    }
-    logCaptureLn(dataDisabled ? String("已禁用数据连接(AT+CGACT=0,1)，防止流量消耗")
-                              : String("⚠️ 无法确认数据连接已禁用"));
-  } else {
-    logCaptureLn(String("该型号无法配置(AT+CGACT=0,1)，跳过该命令，会不会消耗流量？自求多福"));
-  }
   String iccidResponse = sendATCommand("AT+ICCID", 2000);
   simManagerCaptureIccid(iccidResponse);
   String iccidTail = simManagerIccidTail();
