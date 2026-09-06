@@ -4,7 +4,7 @@
 
 ESP32-C3 + ML307R 的短信接收与转发固件:全功能 Web 管理台、eSIM Profile 管理、多通道推送、定时任务,全部配置在网页完成,无需编译期凭据。
 
-> 本项目 fork 自 [chenxuuu/sms_forwarding](https://github.com/chenxuuu/sms_forwarding)(其上游为 jiqiu2022 的方案),在此基础上重构了认证、eSIM、配置与整个管理台。
+> 仓库起步于 [chenxuuu/sms_forwarding](https://github.com/chenxuuu/sms_forwarding),当前认证、eSIM、配置、推送与管理台均已整体重写。
 > 仅用于接收短信与保号相关功能;不提供通话、拨号。
 
 [后台页面演示](https://sms.j2.cx/) · [HTTP API 文档](API.md)
