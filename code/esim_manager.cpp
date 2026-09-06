@@ -221,46 +221,33 @@ bool openIsdr(int &channel, String &error) {
     isdrTransport = TRANSPORT_CGLA;
     return true;
   }
-  logCaptureLn(String("CCHO 打开 ISD-R 失败，降级 CSIM 逻辑通道"));
 
+  // CCHO 失败:用 CSIM 基础通道 SELECT 一次(仅探测,不建逻辑通道)
+  // 6A82 = 卡上无 ISD-R 应用,确认不是 eUICC;普通 SIM 不再尝试 CSIM 逻辑通道
+  // 以免 MANAGE CHANNEL + 基础通道 SELECT 干扰模组正在进行的 SIM 初始化
   String data;
   uint16_t status = 0;
-  if (csimExchange("0070000001", data, status, error) && status == 0x9000 && data.length() >= 2) {
-    int ch = static_cast<int>(strtoul(data.substring(0, 2).c_str(), nullptr, 16));
-    if (ch > 0 && ch < 20) {
-      String cla = hexByte(channelCla(ch));
-      if (csimExchange(cla + "A4040010" + String(ISDR_AID), data, status, error)) {
-        if ((status >> 8) == 0x61) {
-          csimExchange(cla + "C00000" + hexByte(status & 0xff), data, status, error);
-          status = 0x9000;
-        }
-        if (status == 0x9000) {
-          channel = ch;
-          isdrTransport = TRANSPORT_CSIM_LOGICAL;
-          return true;
-        }
-      }
-      String closeData;
-      uint16_t closeStatus = 0;
-      String closeError;
-      csimExchange("00708000" + hexByte(ch), closeData, closeStatus, closeError);
-    }
-  }
-  logCaptureLn(String("CSIM 逻辑通道失败，降级 CSIM 基础通道"));
-
   if (csimExchange("00A4040010" + String(ISDR_AID), data, status, error)) {
+    if (status == 0x6A82) {
+      cardIsEuicc = false;
+      error = "当前卡不支持 eUICC";
+      logCaptureLn(String("SIM 无 ISD-R 应用(6A82),标记为非 eUICC"));
+      return false;
+    }
     if ((status >> 8) == 0x61) {
       csimExchange("00C00000" + hexByte(status & 0xff), data, status, error);
       status = 0x9000;
     }
     if (status == 0x9000) {
+      // CSIM 基础通道能选中 ISD-R,是 eUICC 但 CCHO 被模组阻断
       channel = 0;
       isdrTransport = TRANSPORT_CSIM_BASIC;
+      logCaptureLn(String("CCHO 被阻断,使用 CSIM 基础通道"));
       return true;
     }
   }
-  cardIsEuicc = false;
-  error = "当前卡不支持 eUICC(CCHO 与 CSIM 均失败)";
+
+  error = "无法打开 eUICC ISD-R 通道";
   return false;
 }
 
