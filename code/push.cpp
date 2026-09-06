@@ -400,7 +400,7 @@ struct PushJob {
   char timestamp[25];
 };
 
-constexpr uint8_t PUSH_QUEUE_DEPTH = 4;
+constexpr uint8_t PUSH_QUEUE_DEPTH = 8;
 QueueHandle_t pushQueue = nullptr;
 
 void pushWorkerTask(void*) {
