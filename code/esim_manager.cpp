@@ -649,8 +649,7 @@ String esimProfilesJson() {
                 String(job.active ? "true" : "false") + ",\"profiles\":[";
   for (uint8_t i = 0; i < profileCount; ++i) {
     if (i) json += ',';
-    String tail = profiles[i].iccid.length() > 4 ? profiles[i].iccid.substring(profiles[i].iccid.length() - 4) : profiles[i].iccid;
-    json += "{\"id\":\"" + profiles[i].id + "\",\"iccidTail\":\"" + escapeJson(tail) +
+    json += "{\"id\":\"" + profiles[i].id + "\",\"iccid\":\"" + escapeJson(profiles[i].iccid) +
             "\",\"provider\":\"" + escapeJson(profiles[i].provider) + "\",\"operator\":\"" +
             escapeJson(profiles[i].provider) + "\",\"name\":\"" + escapeJson(profiles[i].name) +
             "\",\"type\":\"eSIM\",\"status\":\"" + (profiles[i].enabled ? "当前使用中" : "可切换") +
