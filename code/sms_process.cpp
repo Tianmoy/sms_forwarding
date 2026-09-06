@@ -307,9 +307,7 @@ bool processSmsContent(const char* sender, const char* text, const char* timesta
   // 发送通知http（推送到所有启用的通道）
   sendSMSToServer(sender, text, timestamp);
   // 发送通知邮件
-  String subject = ""; subject+="短信";subject+=sender;subject+=",";subject+=text;
-  String body = ""; body+="来自：";body+=sender;body+="，时间：";body+=timestamp;body+="，内容：";body+=text;
-  sendEmailNotification(subject.c_str(), body.c_str());
+  String subject = "收到短信";   String body = "发送者：";body+=sender;body+="\n时间：";body+=timestamp;body+="\n内容：";body+=text;   sendEmailNotification(subject.c_str(), body.c_str());
   return true;
 }
 
