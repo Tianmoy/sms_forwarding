@@ -26,6 +26,11 @@ enum PushType {
 struct WifiNet {
   String ssid;
   String pass;
+  // IP 记忆:同网络尽量复用首次获取的地址;网关/掩码变化时整体重学
+  String ip;
+  String gw;
+  String mask;
+  String dns;
 };
 
 // 自定义任务类型

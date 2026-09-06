@@ -24,12 +24,16 @@ void saveConfig() {
   putStrIf("numBlkList", config.numberBlackList);
   for (int i = 0; i < WIFI_NETS_MAX; i++) {
     String prefix = "wifi" + String(i);
+    const char *wkeys[] = {"ssid", "pass", "ip", "gw", "mask", "dns"};
     if (config.wifiNets[i].ssid.length() > 0) {
       preferences.putString((prefix + "ssid").c_str(), config.wifiNets[i].ssid);
       putStrIf((prefix + "pass"), config.wifiNets[i].pass);
+      putStrIf((prefix + "ip"), config.wifiNets[i].ip);
+      putStrIf((prefix + "gw"), config.wifiNets[i].gw);
+      putStrIf((prefix + "mask"), config.wifiNets[i].mask);
+      putStrIf((prefix + "dns"), config.wifiNets[i].dns);
     } else {
-      preferences.remove((prefix + "ssid").c_str());
-      preferences.remove((prefix + "pass").c_str());
+      for (const char *k : wkeys) preferences.remove((prefix + k).c_str());
     }
   }
   putStrIf("brandTitle", config.brandTitle);
@@ -97,6 +101,10 @@ void loadConfig() {
     String prefix = "wifi" + String(i);
     config.wifiNets[i].ssid = preferences.getString((prefix + "ssid").c_str(), "");
     config.wifiNets[i].pass = preferences.getString((prefix + "pass").c_str(), "");
+    config.wifiNets[i].ip = preferences.getString((prefix + "ip").c_str(), "");
+    config.wifiNets[i].gw = preferences.getString((prefix + "gw").c_str(), "");
+    config.wifiNets[i].mask = preferences.getString((prefix + "mask").c_str(), "");
+    config.wifiNets[i].dns = preferences.getString((prefix + "dns").c_str(), "");
   }
   // 迁移旧版单 WiFi 键到网络列表首位
   if (config.wifiNets[0].ssid.length() == 0) {

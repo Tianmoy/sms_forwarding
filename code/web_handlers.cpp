@@ -85,6 +85,7 @@ static bool requireModemRouteReady() {
 }
 
 // 依次尝试已配置的 WiFi 网络,成功返回 true(需在 HTTP 服务启动后调用)
+void wifiApplyStableIp(int idx);
 bool wifiConnectAll() {
   if (WiFi.getMode() != WIFI_STA) WiFi.mode(WIFI_STA);
   WiFi.setSleep(false);
@@ -102,10 +103,48 @@ bool wifiConnectAll() {
       server.handleClient();
       delay(50);
     }
-    if (WiFi.status() == WL_CONNECTED) return true;
+    if (WiFi.status() == WL_CONNECTED) {
+      wifiApplyStableIp(i);
+      return true;
+    }
     logCaptureLn(String("WiFi 连接失败: ") + config.wifiNets[i].ssid);
   }
   return false;
+}
+
+// IP 记忆:同网络复用首次地址;网关或掩码变化时重学
+void wifiApplyStableIp(int idx) {
+  if (idx < 0 || idx >= WIFI_NETS_MAX) return;
+  WifiNet &net = config.wifiNets[idx];
+  String curIp = WiFi.localIP().toString();
+  String curGw = WiFi.gatewayIP().toString();
+  String curMask = WiFi.subnetMask().toString();
+  String curDns = WiFi.dnsIP().toString();
+  if (net.ip.length() == 0 || net.gw != curGw || net.mask != curMask) {
+    net.ip = curIp;
+    net.gw = curGw;
+    net.mask = curMask;
+    net.dns = curDns;
+    saveConfig();
+    logCaptureLn(String("IP 记忆已更新: ") + curIp);
+    return;
+  }
+  if (curIp == net.ip) return;
+  IPAddress bindIp, bindGw, bindMask, bindDns;
+  if (!bindIp.fromString(net.ip) || !bindGw.fromString(net.gw) ||
+      !bindMask.fromString(net.mask) ||
+      !(net.dns.length() == 0 || bindDns.fromString(net.dns))) {
+    return;
+  }
+  if (net.dns.length() == 0) bindDns = bindGw;
+  logCaptureLn(String("切回记忆 IP: ") + net.ip);
+  WiFi.config(bindIp, bindGw, bindMask, bindDns);
+  WiFi.reconnect();
+  unsigned long start = millis();
+  while (WiFi.status() != WL_CONNECTED && millis() - start < 8000) {
+    server.handleClient();
+    delay(50);
+  }
 }
 
 // 无可用WiFi时开放配置热点,供首次配置使用
