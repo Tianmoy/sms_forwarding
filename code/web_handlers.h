@@ -18,13 +18,11 @@ void logCaptureLn(const char* msg);
 bool checkAuth();
 void sendJsonResponse(int status, const String &json);
 void handleRoot();
-void handleQuery();
 bool wifiConnectAll();
 void wifiStartAp();
 void handleATCommand();
 void handlePing();
 void handleLog();
 void handleModem();
-void handleWifi();
 
 #endif

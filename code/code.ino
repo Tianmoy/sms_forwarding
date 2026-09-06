@@ -39,11 +39,9 @@ void setup() {
   server.on("/", HTTP_GET, handleRoot);
   server.on("/tools", HTTP_GET, handleRoot);
   server.on("/sms", HTTP_GET, handleRoot);
-  server.on("/query", handleQuery);
   server.on("/at", HTTP_POST, handleATCommand);
   server.on("/log", HTTP_GET, handleLog);
   server.on("/modem", handleModem);
-  server.on("/wifi", HTTP_POST, handleWifi);
   server.on("/ping", HTTP_POST, handlePing);
   registerApiRoutes();
   server.begin();
