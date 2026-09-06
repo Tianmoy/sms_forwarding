@@ -12,35 +12,7 @@
 
 namespace {
 
-String jsonEscapeApi(const String &input) {
-  String out;
-  out.reserve(input.length() + 8);
-  for (size_t i = 0; i < input.length(); ++i) {
-    unsigned char c = input[i];
-    switch (c) {
-      case '\\': out += "\\\\"; break;
-      case '"': out += "\\\""; break;
-      case '\n': out += "\\n"; break;
-      case '\r': out += "\\r"; break;
-      case '\t': out += "\\t"; break;
-      default:
-        if (c < 0x20) {
-          char buf[7];
-          snprintf(buf, sizeof(buf), "\\u%04x", c);
-          out += buf;
-        } else {
-          out += static_cast<char>(c);
-        }
-    }
-  }
-  return out;
-}
 
-void sendJson(int status, const String &json) {
-  server.sendHeader("Cache-Control", "no-store");
-  server.sendHeader("X-Content-Type-Options", "nosniff");
-  server.send(status, "application/json", json);
-}
 
 bool validLength(const String &value, size_t maxLength) {
   return value.length() <= maxLength;
@@ -72,10 +44,10 @@ void handleApiStatus() {
   json = "{\"ok\":true,\"uptime\":" + String(millis() / 1000) +
          ",\"heap\":" + String(ESP.getFreeHeap()) + ",\"epoch\":" + String(static_cast<unsigned long>(time(nullptr))) +
          ",\"wifi\":{\"connected\":" + String(WiFi.isConnected() ? "true" : "false") +
-         ",\"ssid\":\"" + jsonEscapeApi(WiFi.SSID()) + "\",\"rssi\":" + String(WiFi.RSSI()) +
+         ",\"ssid\":\"" + jsonEscape(WiFi.SSID()) + "\",\"rssi\":" + String(WiFi.RSSI()) +
          ",\"ip\":\"" + WiFi.localIP().toString() + "\"},\"modem\":{\"ready\":" +
          String(modemReady ? "true" : "false") + ",\"model\":\"ML307R\",\"operator\":\"" +
-         jsonEscapeApi(networkOperator) + "\",\"busy\":" +
+         jsonEscape(networkOperator) + "\",\"busy\":" +
          String(modemIsBusy() ? "true" : "false") +
          ",\"registration\":\"" + String(modemReady ? "已注册" : "未注册") +
          "\",\"rsrp\":" + rsrpJson + ",\"rsrq\":" + rsrqJson +
@@ -87,14 +59,14 @@ void handleApiStatus() {
          ",\"present\":" + String(simManagerIsPresent() ? "true" : "false") +
          ",\"ready\":" + String(simManagerIsReady() ? "true" : "false") +
          ",\"smsReady\":" + String(simManagerSmsReady() ? "true" : "false") +
-         ",\"message\":\"" + jsonEscapeApi(simManagerMessage()) +
+         ",\"message\":\"" + jsonEscape(simManagerMessage()) +
          "\",\"generation\":" + String(simManagerGeneration()) +
          ",\"changedAt\":" + String(simManagerChangedAt()) + ",\"profile\":\"" +
-         jsonEscapeApi(activeProfile) + "\",\"name\":\"" + jsonEscapeApi(activeProfile) +
-         "\",\"profileName\":\"" + jsonEscapeApi(activeProfile) + "\"},\"sms\":{\"stored\":" + String(smsStoreCount()) +
+         jsonEscape(activeProfile) + "\",\"name\":\"" + jsonEscape(activeProfile) +
+         "\",\"profileName\":\"" + jsonEscape(activeProfile) + "\"},\"sms\":{\"stored\":" + String(smsStoreCount()) +
          ",\"unread\":" + String(smsStoreUnread()) + ",\"capacity\":50},\"push\":{\"enabled\":" +
          String(enabledPush) + "},\"job\":" + esimJobJson() + "}";
-  sendJson(200, json);
+  sendJsonResponse(200, json);
 }
 
 void handleApiSmsList() {
@@ -102,7 +74,7 @@ void handleApiSmsList() {
   String messages = smsStoreListJson();
   String json = "{\"ok\":true,\"count\":" + String(smsStoreCount()) + ",\"unread\":" +
                 String(smsStoreUnread()) + ",\"capacity\":50,\"messages\":" + messages + "}";
-  sendJson(200, json);
+  sendJsonResponse(200, json);
 }
 
 uint32_t requestId() {
@@ -118,152 +90,152 @@ void handleApiSmsRead() {
   if (!authRequireCsrf()) return;
   uint32_t id = requestId();
   if (!id || !smsStoreMarkRead(id)) {
-    sendJson(404, "{\"ok\":false,\"error\":\"not_found\"}");
+    sendJsonResponse(404, "{\"ok\":false,\"error\":\"not_found\"}");
     return;
   }
-  sendJson(200, "{\"ok\":true}");
+  sendJsonResponse(200, "{\"ok\":true}");
 }
 
 void handleApiSmsDelete() {
   if (!authRequireCsrf()) return;
   uint32_t id = requestId();
   if (!id || !smsStoreDelete(id)) {
-    sendJson(404, "{\"ok\":false,\"error\":\"not_found\"}");
+    sendJsonResponse(404, "{\"ok\":false,\"error\":\"not_found\"}");
     return;
   }
-  sendJson(200, "{\"ok\":true}");
+  sendJsonResponse(200, "{\"ok\":true}");
 }
 
 void handleApiSmsClear() {
   if (!authRequireCsrf()) return;
   if (!smsStoreClear()) {
-    sendJson(500, "{\"ok\":false,\"error\":\"storage\"}");
+    sendJsonResponse(500, "{\"ok\":false,\"error\":\"storage\"}");
     return;
   }
-  sendJson(200, "{\"ok\":true}");
+  sendJsonResponse(200, "{\"ok\":true}");
 }
 
 void handleApiEsimProfiles() {
   if (!authRequire()) return;
   if (!simManagerIsReady()) {
-    sendJson(200, esimProfilesJson());
+    sendJsonResponse(200, esimProfilesJson());
     return;
   }
   if (modemIsBusy()) {
     if (esimProfilesLoaded()) {
-      sendJson(200, esimProfilesJson());
+      sendJsonResponse(200, esimProfilesJson());
       return;
     }
-    sendJson(503, "{\"ok\":false,\"error\":\"modem_busy\",\"message\":\"模组正在初始化，请稍后重试\"}");
+    sendJsonResponse(503, "{\"ok\":false,\"error\":\"modem_busy\",\"message\":\"模组正在初始化，请稍后重试\"}");
     return;
   }
   if (!esimProfilesLoaded() && !esimIsBusy()) {
     String error;
     if (!esimRefreshProfiles(error)) {
-      sendJson(503, "{\"ok\":false,\"error\":\"esim\",\"message\":\"" + jsonEscapeApi(error) + "\"}");
+      sendJsonResponse(503, "{\"ok\":false,\"error\":\"esim\",\"message\":\"" + jsonEscape(error) + "\"}");
       return;
     }
   }
-  sendJson(200, esimProfilesJson());
+  sendJsonResponse(200, esimProfilesJson());
 }
 
 void handleApiEsimRefresh() {
   if (!authRequireCsrf()) return;
   if (!simManagerIsReady()) {
-    sendJson(409, "{\"ok\":false,\"error\":\"sim_not_ready\",\"message\":\"SIM 尚未就绪\"}");
+    sendJsonResponse(409, "{\"ok\":false,\"error\":\"sim_not_ready\",\"message\":\"SIM 尚未就绪\"}");
     return;
   }
   if (modemIsBusy()) {
-    sendJson(409, "{\"ok\":false,\"error\":\"modem_busy\",\"message\":\"模组正在处理其他通信，请稍后重试\"}");
+    sendJsonResponse(409, "{\"ok\":false,\"error\":\"modem_busy\",\"message\":\"模组正在处理其他通信，请稍后重试\"}");
     return;
   }
   String error;
   if (!esimRefreshProfiles(error)) {
-    sendJson(503, "{\"ok\":false,\"error\":\"esim\",\"message\":\"" + jsonEscapeApi(error) + "\"}");
+    sendJsonResponse(503, "{\"ok\":false,\"error\":\"esim\",\"message\":\"" + jsonEscape(error) + "\"}");
     return;
   }
-  sendJson(200, esimProfilesJson());
+  sendJsonResponse(200, esimProfilesJson());
 }
 
 void handleApiEsimSwitch() {
   if (!authRequireCsrf()) return;
   if (!simManagerIsReady()) {
-    sendJson(409, "{\"ok\":false,\"error\":\"sim_not_ready\",\"message\":\"SIM 尚未就绪\"}");
+    sendJsonResponse(409, "{\"ok\":false,\"error\":\"sim_not_ready\",\"message\":\"SIM 尚未就绪\"}");
     return;
   }
   if (modemIsBusy()) {
-    sendJson(409, "{\"ok\":false,\"error\":\"modem_busy\",\"message\":\"模组正在处理其他通信，请稍后重试\"}");
+    sendJsonResponse(409, "{\"ok\":false,\"error\":\"modem_busy\",\"message\":\"模组正在处理其他通信，请稍后重试\"}");
     return;
   }
   String id = server.arg("id");
   if (id.length() != 32) {
-    sendJson(400, "{\"ok\":false,\"error\":\"invalid_profile\"}");
+    sendJsonResponse(400, "{\"ok\":false,\"error\":\"invalid_profile\"}");
     return;
   }
   String message;
   if (!esimStartSwitch(id, message)) {
-    sendJson(esimIsBusy() ? 409 : 400,
-             "{\"ok\":false,\"message\":\"" + jsonEscapeApi(message) + "\"}");
+    sendJsonResponse(esimIsBusy() ? 409 : 400,
+             "{\"ok\":false,\"message\":\"" + jsonEscape(message) + "\"}");
     return;
   }
-  sendJson(202, "{\"ok\":true,\"message\":\"" + jsonEscapeApi(message) + "\",\"job\":" + esimJobJson() + "}");
+  sendJsonResponse(202, "{\"ok\":true,\"message\":\"" + jsonEscape(message) + "\",\"job\":" + esimJobJson() + "}");
 }
 
 void handleApiEsimEid() {
   if (!authRequire()) return;
   if (!simManagerIsReady()) {
-    sendJson(200, "{\"ok\":true,\"eid\":\"\"}");
+    sendJsonResponse(200, "{\"ok\":true,\"eid\":\"\"}");
     return;
   }
   if (modemIsBusy()) {
-    sendJson(409, "{\"ok\":false,\"error\":\"modem_busy\",\"message\":\"模组正在处理其他通信，请稍后重试\"}");
+    sendJsonResponse(409, "{\"ok\":false,\"error\":\"modem_busy\",\"message\":\"模组正在处理其他通信，请稍后重试\"}");
     return;
   }
   String error;
   String eid = esimGetEid(error);
   if (!eid.length()) {
-    sendJson(503, "{\"ok\":false,\"error\":\"esim\",\"message\":\"" + jsonEscapeApi(error) + "\"}");
+    sendJsonResponse(503, "{\"ok\":false,\"error\":\"esim\",\"message\":\"" + jsonEscape(error) + "\"}");
     return;
   }
-  sendJson(200, "{\"ok\":true,\"eid\":\"" + jsonEscapeApi(eid) + "\"}");
+  sendJsonResponse(200, "{\"ok\":true,\"eid\":\"" + jsonEscape(eid) + "\"}");
 }
 
 void handleApiEsimDelete() {
   if (!authRequireCsrf()) return;
   if (!simManagerIsReady()) {
-    sendJson(409, "{\"ok\":false,\"error\":\"sim_not_ready\",\"message\":\"SIM 尚未就绪\"}");
+    sendJsonResponse(409, "{\"ok\":false,\"error\":\"sim_not_ready\",\"message\":\"SIM 尚未就绪\"}");
     return;
   }
   if (modemIsBusy()) {
-    sendJson(409, "{\"ok\":false,\"error\":\"modem_busy\",\"message\":\"模组正在处理其他通信，请稍后重试\"}");
+    sendJsonResponse(409, "{\"ok\":false,\"error\":\"modem_busy\",\"message\":\"模组正在处理其他通信，请稍后重试\"}");
     return;
   }
   String id = server.arg("id");
   if (id.length() != 32) {
-    sendJson(400, "{\"ok\":false,\"error\":\"invalid_profile\"}");
+    sendJsonResponse(400, "{\"ok\":false,\"error\":\"invalid_profile\"}");
     return;
   }
   String message;
   if (!esimDeleteProfile(id, message)) {
-    sendJson(400, "{\"ok\":false,\"message\":\"" + jsonEscapeApi(message) + "\"}");
+    sendJsonResponse(400, "{\"ok\":false,\"message\":\"" + jsonEscape(message) + "\"}");
     return;
   }
-  sendJson(200, "{\"ok\":true,\"message\":\"Profile 已删除\"}");
+  sendJsonResponse(200, "{\"ok\":true,\"message\":\"Profile 已删除\"}");
 }
 
 void handleApiOperatorGet() {
   if (!authRequire()) return;
-  sendJson(200, operatorManagerJson());
+  sendJsonResponse(200, operatorManagerJson());
 }
 
 void handleApiOperatorScan() {
   if (!authRequireCsrf()) return;
   String message;
   if (!operatorManagerStartScan(message)) {
-    sendJson(409, "{\"ok\":false,\"message\":\"" + jsonEscapeApi(message) + "\"}");
+    sendJsonResponse(409, "{\"ok\":false,\"message\":\"" + jsonEscape(message) + "\"}");
     return;
   }
-  sendJson(202, operatorManagerJson());
+  sendJsonResponse(202, operatorManagerJson());
 }
 
 void handleApiOperatorSelect() {
@@ -272,31 +244,31 @@ void handleApiOperatorSelect() {
   numeric.trim();
   String actText = server.arg("act");
   if (!actText.length() || actText.length() > 2) {
-    sendJson(400, "{\"ok\":false,\"message\":\"网络制式参数无效\"}");
+    sendJsonResponse(400, "{\"ok\":false,\"message\":\"网络制式参数无效\"}");
     return;
   }
   for (size_t i = 0; i < actText.length(); ++i) {
     if (!isDigit(actText[i])) {
-      sendJson(400, "{\"ok\":false,\"message\":\"网络制式参数无效\"}");
+      sendJsonResponse(400, "{\"ok\":false,\"message\":\"网络制式参数无效\"}");
       return;
     }
   }
   String message;
   if (!operatorManagerStartSelect(numeric, actText.toInt(), message)) {
-    sendJson(409, "{\"ok\":false,\"message\":\"" + jsonEscapeApi(message) + "\"}");
+    sendJsonResponse(409, "{\"ok\":false,\"message\":\"" + jsonEscape(message) + "\"}");
     return;
   }
-  sendJson(202, operatorManagerJson());
+  sendJsonResponse(202, operatorManagerJson());
 }
 
 void handleApiOperatorAuto() {
   if (!authRequireCsrf()) return;
   String message;
   if (!operatorManagerStartAuto(message)) {
-    sendJson(409, "{\"ok\":false,\"message\":\"" + jsonEscapeApi(message) + "\"}");
+    sendJsonResponse(409, "{\"ok\":false,\"message\":\"" + jsonEscape(message) + "\"}");
     return;
   }
-  sendJson(202, operatorManagerJson());
+  sendJsonResponse(202, operatorManagerJson());
 }
 
 void handleApiWifiPost() {
@@ -307,7 +279,7 @@ void handleApiWifiPost() {
       config.wifiNets[i].pass = "";
     }
     saveConfig();
-    sendJson(200, "{\"ok\":true,\"message\":\"已清空全部WiFi，重启后设备开启配置热点 sms-forwarder\"}");
+    sendJsonResponse(200, "{\"ok\":true,\"message\":\"已清空全部WiFi，重启后设备开启配置热点 sms-forwarder\"}");
     delay(800);
     ESP.restart();
     return;
@@ -319,7 +291,7 @@ void handleApiWifiPost() {
     String pass = server.arg("wifiPass" + String(i));
     ssid.trim();
     if (ssid.length() > 32 || pass.length() > 64) {
-      sendJson(400, "{\"ok\":false,\"message\":\"WiFi 名称或密码长度无效\"}");
+      sendJsonResponse(400, "{\"ok\":false,\"message\":\"WiFi 名称或密码长度无效\"}");
       return;
     }
     if (pass.length() == 0 && ssid.length() > 0) {
@@ -335,19 +307,19 @@ void handleApiWifiPost() {
     updated[i].pass = pass;
   }
   if (!anySsid) {
-    sendJson(400, "{\"ok\":false,\"message\":\"至少需要填写一个 WiFi 名称\"}");
+    sendJsonResponse(400, "{\"ok\":false,\"message\":\"至少需要填写一个 WiFi 名称\"}");
     return;
   }
   for (int i = 0; i < WIFI_NETS_MAX; ++i) config.wifiNets[i] = updated[i];
   saveConfig();
-  sendJson(200, "{\"ok\":true,\"message\":\"WiFi 已保存，设备即将重启并按主备顺序连接\"}");
+  sendJsonResponse(200, "{\"ok\":true,\"message\":\"WiFi 已保存，设备即将重启并按主备顺序连接\"}");
   delay(800);
   ESP.restart();
 }
 
 void handleApiReboot() {
   if (!authRequireCsrf()) return;
-  sendJson(200, "{\"ok\":true,\"message\":\"设备正在重启，约 40 秒后恢复\"}");
+  sendJsonResponse(200, "{\"ok\":true,\"message\":\"设备正在重启，约 40 秒后恢复\"}");
   delay(800);
   ESP.restart();
 }
@@ -355,7 +327,7 @@ void handleApiReboot() {
 void handleApiPushTest() {
   if (!authRequire()) return;
   if (WiFi.status() != WL_CONNECTED) {
-    sendJson(409, "{\"ok\":false,\"message\":\"WiFi 未连接\"}");
+    sendJsonResponse(409, "{\"ok\":false,\"message\":\"WiFi 未连接\"}");
     return;
   }
   String ch = server.arg("channel");
@@ -364,25 +336,25 @@ void handleApiPushTest() {
     bool emailOk = config.smtpServer.length() > 0 && config.smtpUser.length() > 0 &&
                    config.smtpPass.length() > 0 && config.smtpSendTo.length() > 0;
     if (!emailOk) {
-      sendJson(400, "{\"ok\":false,\"message\":\"邮件通知未配置\"}");
+      sendJsonResponse(400, "{\"ok\":false,\"message\":\"邮件通知未配置\"}");
       return;
     }
     sendEmailNotification("推送测试", "这是一条来自设备的邮件通道测试");
-    sendJson(200, "{\"ok\":true,\"message\":\"测试邮件已发送，请查收\"}");
+    sendJsonResponse(200, "{\"ok\":true,\"message\":\"测试邮件已发送，请查收\"}");
     return;
   }
   int idx = ch.toInt();
   if (idx < 0 || idx >= MAX_PUSH_CHANNELS || !isPushChannelValid(config.pushChannels[idx])) {
-    sendJson(400, "{\"ok\":false,\"message\":\"通道未配置或编号无效\"}");
+    sendJsonResponse(400, "{\"ok\":false,\"message\":\"通道未配置或编号无效\"}");
     return;
   }
   sendToChannel(config.pushChannels[idx], "测试", "推送通道测试消息", timestamp.c_str());
-  sendJson(200, "{\"ok\":true,\"message\":\"已向通道 " + String(idx + 1) + " 发送测试，请查收\"}");
+  sendJsonResponse(200, "{\"ok\":true,\"message\":\"已向通道 " + String(idx + 1) + " 发送测试，请查收\"}");
 }
 
 void handleApiFactoryReset() {
   if (!authRequireCsrf()) return;
-  sendJson(200, "{\"ok\":true,\"message\":\"正在恢复出厂设置，设备即将重启并开启配置热点\"}");
+  sendJsonResponse(200, "{\"ok\":true,\"message\":\"正在恢复出厂设置，设备即将重启并开启配置热点\"}");
   delay(800);
   preferences.begin("sms_config", false);
   preferences.clear();
@@ -393,22 +365,22 @@ void handleApiFactoryReset() {
 
 // 公开的品牌信息(仅展示用途,不含敏感数据)
 void handleApiBrand() {
-  sendJson(200, "{\"ok\":true,\"title\":\"" + jsonEscapeApi(config.brandTitle) +
-                    "\",\"sub\":\"" + jsonEscapeApi(config.brandSub) + "\"}");
+  sendJsonResponse(200, "{\"ok\":true,\"title\":\"" + jsonEscape(config.brandTitle) +
+                    "\",\"sub\":\"" + jsonEscape(config.brandSub) + "\"}");
 }
 
 void handleApiSmsSend() {
   if (!authRequire()) return;
   if (!simManagerIsReady() || !simManagerSmsReady()) {
-    sendJson(409, "{\"ok\":false,\"message\":\"SIM 或短信服务尚未就绪\"}");
+    sendJsonResponse(409, "{\"ok\":false,\"message\":\"SIM 或短信服务尚未就绪\"}");
     return;
   }
   if (esimIsBusy()) {
-    sendJson(409, "{\"ok\":false,\"message\":\"eSIM切换中，无法发送短信\"}");
+    sendJsonResponse(409, "{\"ok\":false,\"message\":\"eSIM切换中，无法发送短信\"}");
     return;
   }
   if (modemIsBusy()) {
-    sendJson(409, "{\"ok\":false,\"message\":\"模组正在初始化或处理其他通信，请稍后重试\"}");
+    sendJsonResponse(409, "{\"ok\":false,\"message\":\"模组正在初始化或处理其他通信，请稍后重试\"}");
     return;
   }
   String phone = server.arg("phone");
@@ -416,68 +388,68 @@ void handleApiSmsSend() {
   phone.trim();
   content.trim();
   if (phone.length() == 0 || content.length() == 0) {
-    sendJson(400, "{\"ok\":false,\"message\":\"请填写目标号码和短信内容\"}");
+    sendJsonResponse(400, "{\"ok\":false,\"message\":\"请填写目标号码和短信内容\"}");
     return;
   }
   logCaptureLn(String("网页端发送短信请求"));
   logCaptureLn(String("目标号码: " + phone));
   logCaptureLn(String("短信内容: " + content));
   bool ok = sendSMS(phone.c_str(), content.c_str());
-  sendJson(200, "{\"ok\":" + String(ok ? "true" : "false") +
-                    ",\"message\":\"" + jsonEscapeApi(ok ? "短信发送成功" : "短信发送失败，请检查模组状态") + "\"}");
+  sendJsonResponse(200, "{\"ok\":" + String(ok ? "true" : "false") +
+                    ",\"message\":\"" + jsonEscape(ok ? "短信发送成功" : "短信发送失败，请检查模组状态") + "\"}");
 }
 
 void handleApiConfigGet() {
   if (!authRequire()) return;
   String json;
   json.reserve(4096);
-  json = "{\"ok\":true,\"webUser\":\"" + jsonEscapeApi(config.webUser) +
+  json = "{\"ok\":true,\"webUser\":\"" + jsonEscape(config.webUser) +
          "\",\"mustChangePassword\":" + String(config.webPass == DEFAULT_WEB_PASS ? "true" : "false") +
-         ",\"adminPhone\":\"" + jsonEscapeApi(config.adminPhone) + "\",\"numberBlackList\":\"" +
-         jsonEscapeApi(config.numberBlackList) + "\",\"smtp\":{\"server\":\"" +
-         jsonEscapeApi(config.smtpServer) + "\",\"port\":" + String(config.smtpPort) +
-         ",\"user\":\"" + jsonEscapeApi(config.smtpUser) + "\",\"recipient\":\"" +
-         jsonEscapeApi(config.smtpSendTo) + "\",\"passwordSet\":" +
+         ",\"adminPhone\":\"" + jsonEscape(config.adminPhone) + "\",\"numberBlackList\":\"" +
+         jsonEscape(config.numberBlackList) + "\",\"smtp\":{\"server\":\"" +
+         jsonEscape(config.smtpServer) + "\",\"port\":" + String(config.smtpPort) +
+         ",\"user\":\"" + jsonEscape(config.smtpUser) + "\",\"recipient\":\"" +
+         jsonEscape(config.smtpSendTo) + "\",\"passwordSet\":" +
          String(config.smtpPass.length() ? "true" : "false") + "},\"push\":[";
   for (int i = 0; i < MAX_PUSH_CHANNELS; ++i) {
     if (i) json += ',';
     const PushChannel &ch = config.pushChannels[i];
     json += "{\"enabled\":" + String(ch.enabled ? "true" : "false") + ",\"type\":" +
-            String(static_cast<int>(ch.type)) + ",\"name\":\"" + jsonEscapeApi(ch.name) +
+            String(static_cast<int>(ch.type)) + ",\"name\":\"" + jsonEscape(ch.name) +
             "\",\"urlSet\":" + String(ch.url.length() ? "true" : "false") +
             ",\"key1Set\":" + String(ch.key1.length() ? "true" : "false") +
             ",\"key2Set\":" + String(ch.key2.length() ? "true" : "false") +
             ",\"urlConfigured\":" + String(ch.url.length() ? "true" : "false") +
             ",\"key1Configured\":" + String(ch.key1.length() ? "true" : "false") +
              ",\"key2Configured\":" + String(ch.key2.length() ? "true" : "false") +
-             ",\"customBody\":\"" + jsonEscapeApi(ch.customBody) + "\"}";
+             ",\"customBody\":\"" + jsonEscape(ch.customBody) + "\"}";
    }
   json += "],\"wifi\":{\"nets\":[";
   for (int i = 0; i < WIFI_NETS_MAX; ++i) {
     if (i) json += ',';
-    json += "{\"ssid\":\"" + jsonEscapeApi(config.wifiNets[i].ssid) +
+    json += "{\"ssid\":\"" + jsonEscape(config.wifiNets[i].ssid) +
             "\",\"passSet\":" + String(config.wifiNets[i].pass.length() ? "true" : "false") + "}";
   }
   json += "],\"apMode\":" + String(WiFi.getMode() == WIFI_AP ? "true" : "false") +
-          "},\"brand\":{\"title\":\"" + jsonEscapeApi(config.brandTitle) +
-          "\",\"sub\":\"" + jsonEscapeApi(config.brandSub) + "\"},\"tasks\":[";
+          "},\"brand\":{\"title\":\"" + jsonEscape(config.brandTitle) +
+          "\",\"sub\":\"" + jsonEscape(config.brandSub) + "\"},\"tasks\":[";
   for (int i = 0; i < MAX_CUSTOM_TASKS; ++i) {
     if (i) json += ',';
     json += "{\"type\":" + String(config.tasks[i].type) +
-            ",\"name\":\"" + jsonEscapeApi(config.tasks[i].name) +
+            ",\"name\":\"" + jsonEscape(config.tasks[i].name) +
             "\",\"mode\":" + String(config.tasks[i].mode) +
             ",\"intervalSeconds\":" + String(config.tasks[i].intervalSeconds) +
             ",\"hour\":" + String(config.tasks[i].hour) +
             ",\"minute\":" + String(config.tasks[i].minute) +
             ",\"weekday\":" + String(config.tasks[i].weekday) +
             ",\"dayOfMonth\":" + String(config.tasks[i].dayOfMonth) +
-            ",\"param\":\"" + jsonEscapeApi(config.tasks[i].param) + "\",\"httpMethod\":" +
-            String(config.tasks[i].httpMethod) + ",\"headers\":\"" + jsonEscapeApi(config.tasks[i].headers) +
-            "\",\"body\":\"" + jsonEscapeApi(config.tasks[i].body) + "\"}";
+            ",\"param\":\"" + jsonEscape(config.tasks[i].param) + "\",\"httpMethod\":" +
+            String(config.tasks[i].httpMethod) + ",\"headers\":\"" + jsonEscape(config.tasks[i].headers) +
+            "\",\"body\":\"" + jsonEscape(config.tasks[i].body) + "\"}";
   }
   json += "],\"pollSeconds\":" + String(config.pollSeconds) +
-         ",\"apiToken\":\"" + jsonEscapeApi(config.apiToken) + "\"}";
-  sendJson(200, json);
+         ",\"apiToken\":\"" + jsonEscape(config.apiToken) + "\"}";
+  sendJsonResponse(200, json);
 }
 
 void handleApiConfigPost() {
@@ -489,7 +461,7 @@ void handleApiConfigPost() {
   String blacklist = server.arg("numberBlackList");
   if (!validLength(webUser, 64) || !validLength(webPass, 128) || !validLength(adminPhone, 32) ||
       !validLength(blacklist, 512)) {
-    sendJson(400, "{\"ok\":false,\"error\":\"input_too_long\"}");
+    sendJsonResponse(400, "{\"ok\":false,\"error\":\"input_too_long\"}");
     return;
   }
 
@@ -500,7 +472,7 @@ void handleApiConfigPost() {
   }
   if (webPass.length() && webPass != config.webPass) {
     if (webPass.length() < 8) {
-      sendJson(400, "{\"ok\":false,\"error\":\"password_too_short\"}");
+      sendJsonResponse(400, "{\"ok\":false,\"error\":\"password_too_short\"}");
       return;
     }
     config.webPass = webPass;
@@ -544,7 +516,7 @@ void handleApiConfigPost() {
       uint8_t ty = (uint8_t)constrain(server.arg(p + "type").toInt(), 0, 3);
       config.tasks[i].type = ty;
       if (ty != TASK_NONE && !server.hasArg(p + "intervalSeconds")) {
-        sendJson(400, "{\"ok\":false,\"message\":\"缺少任务间隔\"}");
+        sendJsonResponse(400, "{\"ok\":false,\"message\":\"缺少任务间隔\"}");
         return;
       }
     }
@@ -594,7 +566,7 @@ void handleApiConfigPost() {
 
   saveConfig();
   configValid = isConfigValid();
-  sendJson(200, "{\"ok\":true,\"reauth\":" + String(credentialsChanged ? "true" : "false") + "}");
+  sendJsonResponse(200, "{\"ok\":true,\"reauth\":" + String(credentialsChanged ? "true" : "false") + "}");
   if (credentialsChanged) authInvalidateAll();
 }
 

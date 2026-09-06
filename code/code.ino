@@ -71,7 +71,6 @@ void setup() {
     server.handleClient();
   }
   if (time(nullptr) >= 100000) {
-    timeSynced = true;
     logCaptureLn(String("NTP时间同步成功"));
     time_t now = time(nullptr);
     logCapture(String("当前UTC时间戳: "));

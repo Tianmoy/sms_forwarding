@@ -34,7 +34,6 @@ extern WiFiClientSecure ssl_client;
 extern SMTPClient smtp;
 extern WebServer server;
 extern bool configValid;
-extern bool timeSynced;
 extern bool modemReady;
 extern unsigned long lastPrintTime;
 extern ConcatSms concatBuffer[MAX_CONCAT_MESSAGES];

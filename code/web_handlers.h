@@ -16,9 +16,8 @@ void logCaptureLn(const String& msg);
 void logCaptureLn(const char* msg);
 
 bool checkAuth();
+void sendJsonResponse(int status, const String &json);
 void handleRoot();
-void handleToolsPage();
-void handleSave();
 void handleQuery();
 void handleFlightMode();
 void handleDataToggle();

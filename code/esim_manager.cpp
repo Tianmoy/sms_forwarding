@@ -1,4 +1,5 @@
 #include "esim_manager.h"
+#include "push.h"
 #include "modem.h"
 #include "operator_manager.h"
 #include "sim_manager.h"
@@ -60,29 +61,6 @@ Preferences esimPrefs;
 bool profileIoBusy = false;
 uint8_t configureAttempts = 0;
 
-String escapeJson(const String &input) {
-  String out;
-  out.reserve(input.length() + 8);
-  for (size_t i = 0; i < input.length(); ++i) {
-    unsigned char c = input[i];
-    switch (c) {
-      case '\\': out += "\\\\"; break;
-      case '"': out += "\\\""; break;
-      case '\n': out += "\\n"; break;
-      case '\r': out += "\\r"; break;
-      case '\t': out += "\\t"; break;
-      default:
-        if (c < 0x20) {
-          char buf[7];
-          snprintf(buf, sizeof(buf), "\\u%04x", c);
-          out += buf;
-        } else {
-          out += static_cast<char>(c);
-        }
-    }
-  }
-  return out;
-}
 
 String hexByte(uint8_t value) {
   const char *hex = "0123456789ABCDEF";
@@ -649,9 +627,9 @@ String esimProfilesJson() {
                 String(job.active ? "true" : "false") + ",\"profiles\":[";
   for (uint8_t i = 0; i < profileCount; ++i) {
     if (i) json += ',';
-    json += "{\"id\":\"" + profiles[i].id + "\",\"iccid\":\"" + escapeJson(profiles[i].iccid) +
-            "\",\"provider\":\"" + escapeJson(profiles[i].provider) + "\",\"operator\":\"" +
-            escapeJson(profiles[i].provider) + "\",\"name\":\"" + escapeJson(profiles[i].name) +
+    json += "{\"id\":\"" + profiles[i].id + "\",\"iccid\":\"" + jsonEscape(profiles[i].iccid) +
+            "\",\"provider\":\"" + jsonEscape(profiles[i].provider) + "\",\"operator\":\"" +
+            jsonEscape(profiles[i].provider) + "\",\"name\":\"" + jsonEscape(profiles[i].name) +
             "\",\"type\":\"eSIM\",\"status\":\"" + (profiles[i].enabled ? "当前使用中" : "可切换") +
             "\",\"enabled\":" + (profiles[i].enabled ? "true" : "false") +
             ",\"active\":" + (profiles[i].enabled ? "true" : "false") +
@@ -960,8 +938,8 @@ String esimJobJson() {
                 ",\"running\":" + (job.active ? "true" : "false") + ",\"progress\":" + String(progress) +
                 ",\"done\":" + (job.done ? "true" : "false") + ",\"ok\":" + (job.ok ? "true" : "false") +
                 ",\"warning\":" + (job.warning ? "true" : "false") + ",\"phase\":\"" +
-                escapeJson(job.phase) + "\",\"targetId\":\"" + escapeJson(job.targetId) +
-                "\",\"message\":\"" + escapeJson(job.message) + "\",\"elapsed\":" +
+                jsonEscape(job.phase) + "\",\"targetId\":\"" + jsonEscape(job.targetId) +
+                "\",\"message\":\"" + jsonEscape(job.message) + "\",\"elapsed\":" +
                 String(job.startedAt ? (millis() - job.startedAt) / 1000 : 0) + "}";
   return json;
 }

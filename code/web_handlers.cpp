@@ -66,6 +66,12 @@ void logCaptureLn(const char* msg) {
 }
 
 // 所有管理路由统一的 Cookie 会话保护。
+void sendJsonResponse(int status, const String &json) {
+  server.sendHeader("Cache-Control", "no-store");
+  server.sendHeader("X-Content-Type-Options", "nosniff");
+  server.send(status, "application/json", json);
+}
+
 bool checkAuth() {
   return authRequire();
 }
@@ -85,7 +91,7 @@ static bool requireModemRouteReady() {
 }
 
 // 依次尝试已配置的 WiFi 网络,成功返回 true(需在 HTTP 服务启动后调用)
-void wifiApplyStableIp(int idx);
+bool wifiApplyStableIp(int idx);
 bool wifiConnectAll() {
   if (WiFi.getMode() != WIFI_STA) WiFi.mode(WIFI_STA);
   WiFi.setSleep(false);
@@ -104,17 +110,18 @@ bool wifiConnectAll() {
       delay(50);
     }
     if (WiFi.status() == WL_CONNECTED) {
-      wifiApplyStableIp(i);
-      return true;
+      if (wifiApplyStableIp(i)) return true;
+      logCaptureLn(String("IP 记忆回退后仍失败: ") + config.wifiNets[i].ssid);
     }
     logCaptureLn(String("WiFi 连接失败: ") + config.wifiNets[i].ssid);
   }
   return false;
 }
 
-// IP 记忆:同网络复用首次地址;网关或掩码变化时重学
-void wifiApplyStableIp(int idx) {
-  if (idx < 0 || idx >= WIFI_NETS_MAX) return;
+// IP 记忆:同网络复用首次地址;网关或掩码变化时重学。
+// 回切失败时回退 DHCP 重连,仍失败返回 false 视为连接失败。
+bool wifiApplyStableIp(int idx) {
+  if (idx < 0 || idx >= WIFI_NETS_MAX) return true;
   WifiNet &net = config.wifiNets[idx];
   String curIp = WiFi.localIP().toString();
   String curGw = WiFi.gatewayIP().toString();
@@ -127,14 +134,14 @@ void wifiApplyStableIp(int idx) {
     net.dns = curDns;
     saveConfig();
     logCaptureLn(String("IP 记忆已更新: ") + curIp);
-    return;
+    return true;
   }
-  if (curIp == net.ip) return;
+  if (curIp == net.ip) return true;
   IPAddress bindIp, bindGw, bindMask, bindDns;
   if (!bindIp.fromString(net.ip) || !bindGw.fromString(net.gw) ||
       !bindMask.fromString(net.mask) ||
       !(net.dns.length() == 0 || bindDns.fromString(net.dns))) {
-    return;
+    return true;
   }
   if (net.dns.length() == 0) bindDns = bindGw;
   logCaptureLn(String("切回记忆 IP: ") + net.ip);
@@ -145,6 +152,17 @@ void wifiApplyStableIp(int idx) {
     server.handleClient();
     delay(50);
   }
+  if (WiFi.status() == WL_CONNECTED) return true;
+  logCaptureLn(String("记忆 IP 回切失败,回退 DHCP"));
+  IPAddress zero = IPAddress(0, 0, 0, 0);
+  WiFi.config(zero, zero, zero, zero);
+  WiFi.reconnect();
+  start = millis();
+  while (WiFi.status() != WL_CONNECTED && millis() - start < 8000) {
+    server.handleClient();
+    delay(50);
+  }
+  return WiFi.status() == WL_CONNECTED;
 }
 
 // 无可用WiFi时开放配置热点,供首次配置使用
@@ -275,10 +293,6 @@ void handleRoot() {
 #endif
 }
 
-// 处理工具箱页面请求 — 已整合到主页，直接返回主页
-void handleToolsPage() {
-  handleRoot();
-}
 
 // 处理飞行模式控制请求
 void handleFlightMode() {
@@ -998,109 +1012,6 @@ void handleDataToggle() {
   server.send(200, "application/json", json);
 }
 
-// 处理保存配置请求
-void handleSave() {
-  if (!authRequireCsrf()) return;
-
-  // 账号管理表单：只在字段存在时更新
-  if (server.hasArg("webUser")) {
-    String newWebUser = server.arg("webUser");
-    if (newWebUser.length() == 0) newWebUser = DEFAULT_WEB_USER;
-    config.webUser = newWebUser;
-  }
-  if (server.hasArg("webPass")) {
-    String newWebPass = server.arg("webPass");
-    if (newWebPass.length() == 0) newWebPass = DEFAULT_WEB_PASS;
-    config.webPass = newWebPass;
-  }
-
-  // 邮件通知表单：只在字段存在时更新
-  if (server.hasArg("smtpServer")) {
-    config.smtpServer = server.arg("smtpServer");
-  }
-  if (server.hasArg("smtpPort")) {
-    config.smtpPort = server.arg("smtpPort").toInt();
-    if (config.smtpPort == 0) config.smtpPort = 465;
-  }
-  if (server.hasArg("smtpUser")) {
-    config.smtpUser = server.arg("smtpUser");
-  }
-  if (server.hasArg("smtpPass")) {
-    config.smtpPass = server.arg("smtpPass");
-  }
-  if (server.hasArg("smtpSendTo")) {
-    config.smtpSendTo = server.arg("smtpSendTo");
-  }
-
-  // 管理员 & 黑名单表单：只在字段存在时更新
-  if (server.hasArg("adminPhone")) {
-    config.adminPhone = server.arg("adminPhone");
-  }
-  if (server.hasArg("numberBlackList")) {
-    config.numberBlackList = server.arg("numberBlackList");
-  }
-
-  // 推送通道配置：只在对应通道的字段存在时更新
-  for (int i = 0; i < MAX_PUSH_CHANNELS; i++) {
-    String idx = String(i);
-    String enKey = "push" + idx + "en";
-    String typeKey = "push" + idx + "type";
-    String urlKey = "push" + idx + "url";
-    String nameKey = "push" + idx + "name";
-    String k1Key = "push" + idx + "key1";
-    String k2Key = "push" + idx + "key2";
-    String bodyKey = "push" + idx + "body";
-    // 只要该通道的任一字段存在，就更新整个通道
-    if (server.hasArg(enKey) || server.hasArg(typeKey) || server.hasArg(urlKey) ||
-        server.hasArg(nameKey) || server.hasArg(k1Key) || server.hasArg(k2Key) ||
-        server.hasArg(bodyKey)) {
-      config.pushChannels[i].enabled = server.arg(enKey) == "on";
-      config.pushChannels[i].type = (PushType)server.arg(typeKey).toInt();
-      config.pushChannels[i].url = server.arg(urlKey);
-      config.pushChannels[i].name = server.arg(nameKey);
-      config.pushChannels[i].key1 = server.arg(k1Key);
-      config.pushChannels[i].key2 = server.arg(k2Key);
-      config.pushChannels[i].customBody = server.arg(bodyKey);
-      if (config.pushChannels[i].name.length() == 0) {
-        config.pushChannels[i].name = "通道" + String(i + 1);
-      }
-    }
-  }
-  
-  saveConfig();
-  configValid = isConfigValid();
-  
-  String html = R"rawliteral(
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="UTF-8">
-  <meta http-equiv="refresh" content="3;url=/">
-  <title>保存成功</title>
-  <style>
-    body { font-family: Arial, sans-serif; text-align: center; padding-top: 100px; background: #f5f5f5; }
-    .success { background: #4CAF50; color: white; padding: 20px; border-radius: 10px; display: inline-block; }
-  </style>
-</head>
-<body>
-  <div class="success">
-    <h2>✅ 配置保存成功！</h2>
-    <p>3秒后返回配置页面...</p>
-    <p>如果修改了账号密码，请使用新的账号密码登录</p>
-  </div>
-</body>
-</html>
-)rawliteral";
-  server.send(200, "text/html", html);
-  
-  // 如果配置有效，发送启动通知
-  if (configValid) {
-    logCaptureLn(String("配置有效，发送启动通知..."));
-    String subject = "短信转发器配置已更新";
-    String body = "设备配置已更新\n设备地址: " + getDeviceUrl();
-    sendEmailNotification(subject.c_str(), body.c_str());
-  }
-}
 
 // 处理日志查询请求 — 返回环形缓冲区中的日志行
 void handleLog() {

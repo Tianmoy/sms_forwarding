@@ -1,5 +1,7 @@
 #include "auth.h"
 #include "config.h"
+#include "push.h"
+#include "web_handlers.h"
 
 namespace {
 
@@ -11,7 +13,6 @@ constexpr unsigned long LOGIN_LOCK_MS = 30UL * 1000UL;
 struct WebSession {
   bool active = false;
   String token;
-  String csrf;
   IPAddress remoteIp;
   unsigned long createdAt = 0;
   unsigned long lastSeenAt = 0;
@@ -47,29 +48,6 @@ bool secureEquals(const String &a, const String &b) {
   return diff == 0;
 }
 
-String jsonEscapeAuth(const String &input) {
-  String out;
-  out.reserve(input.length() + 8);
-  for (size_t i = 0; i < input.length(); ++i) {
-    unsigned char c = input[i];
-    switch (c) {
-      case '\\': out += "\\\\"; break;
-      case '"': out += "\\\""; break;
-      case '\n': out += "\\n"; break;
-      case '\r': out += "\\r"; break;
-      case '\t': out += "\\t"; break;
-      default:
-        if (c < 0x20) {
-          char buf[7];
-          snprintf(buf, sizeof(buf), "\\u%04x", c);
-          out += buf;
-        } else {
-          out += static_cast<char>(c);
-        }
-    }
-  }
-  return out;
-}
 
 String bearerToken() {
   if (!server.hasHeader("Authorization")) return "";
@@ -97,7 +75,6 @@ WebSession *currentSession(bool touch = true) {
     if (isExpired(session)) {
       session.active = false;
       session.token = "";
-      session.csrf = "";
       continue;
     }
     if (session.remoteIp != remote || !secureEquals(session.token, token)) continue;
@@ -120,16 +97,11 @@ WebSession *allocateSession() {
   return oldest;
 }
 
-void sendJson(int status, const String &json) {
-  server.sendHeader("Cache-Control", "no-store");
-  server.sendHeader("X-Content-Type-Options", "nosniff");
-  server.send(status, "application/json", json);
-}
 
 }  // namespace
 
 void authBegin() {
-  static const char *headers[] = {"Authorization", "Origin", "Host"};
+  static const char *headers[] = {"Authorization"};
   server.collectHeaders(headers, sizeof(headers) / sizeof(headers[0]));
 }
 
@@ -143,7 +115,7 @@ bool authRequire() {
     if (config.apiToken.length() > 0 && secureEquals(token, config.apiToken)) return true;
     if (currentSession()) return true;
   }
-  sendJson(401, "{\"ok\":false,\"error\":\"unauthorized\"}");
+  sendJsonResponse(401, "{\"ok\":false,\"error\":\"unauthorized\"}");
   return false;
 }
 
@@ -155,27 +127,26 @@ void authInvalidateAll() {
   for (auto &session : sessions) {
     session.active = false;
     session.token = "";
-    session.csrf = "";
   }
 }
 
 void handleApiSession() {
   WebSession *session = currentSession();
   if (!session) {
-    sendJson(200, "{\"authenticated\":false}");
+    sendJsonResponse(200, "{\"authenticated\":false}");
     return;
   }
-  String json = "{\"authenticated\":true,\"user\":\"" + jsonEscapeAuth(config.webUser) +
+  String json = "{\"authenticated\":true,\"user\":\"" + jsonEscape(config.webUser) +
                 "\",\"token\":\"" + session->token + "\",\"mustChangePassword\":" +
                 String(config.webPass == DEFAULT_WEB_PASS ? "true" : "false") + "}";
-  sendJson(200, json);
+  sendJsonResponse(200, json);
 }
 
 void handleApiLogin() {
   unsigned long now = millis();
   if (lockedUntil && static_cast<long>(lockedUntil - now) > 0) {
     unsigned long retry = (lockedUntil - now + 999) / 1000;
-    sendJson(429, "{\"ok\":false,\"error\":\"locked\",\"retryAfter\":" + String(retry) + "}");
+    sendJsonResponse(429, "{\"ok\":false,\"error\":\"locked\",\"retryAfter\":" + String(retry) + "}");
     return;
   }
 
@@ -188,7 +159,7 @@ void handleApiLogin() {
       failedLogins = 0;
       lockedUntil = now + LOGIN_LOCK_MS;
     }
-    sendJson(401, "{\"ok\":false,\"error\":\"invalid_credentials\"}");
+    sendJsonResponse(401, "{\"ok\":false,\"error\":\"invalid_credentials\"}");
     return;
   }
 
@@ -197,12 +168,11 @@ void handleApiLogin() {
   WebSession *session = allocateSession();
   session->active = true;
   session->token = randomHex(16);
-  session->csrf = randomHex(12);
   session->remoteIp = server.client().remoteIP();
   session->createdAt = now;
   session->lastSeenAt = now;
 
-  sendJson(200, "{\"ok\":true,\"token\":\"" + session->token +
+  sendJsonResponse(200, "{\"ok\":true,\"token\":\"" + session->token +
                     "\",\"mustChangePassword\":" +
                     String(config.webPass == DEFAULT_WEB_PASS ? "true" : "false") + "}");
 }
@@ -212,7 +182,6 @@ void handleApiLogout() {
   if (session) {
     session->active = false;
     session->token = "";
-    session->csrf = "";
   }
-  sendJson(200, "{\"ok\":true}");
+  sendJsonResponse(200, "{\"ok\":true}");
 }
