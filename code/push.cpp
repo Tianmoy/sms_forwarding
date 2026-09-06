@@ -389,8 +389,9 @@ void sendSMSToServer(const char* sender, const char* message, const char* timest
 }
 
 // ---- 短信通知异步派发 ----
-// SMTP+TLS 握手与各推送通道是秒级阻塞操作;放在独立任务里执行,
+// SMTP+TLS 握手与各推送通道是秒级阻塞操作;由常驻 worker 任务顺序消费队列,
 // 主循环(Web 服务/状态轮询)在单核上依靠时间片轮转保持响应。
+// 连续到达的多条短信按顺序逐条通知,不丢失、不并发。
 namespace {
 
 struct PushJob {
@@ -399,40 +400,52 @@ struct PushJob {
   char timestamp[25];
 };
 
-volatile bool pushTaskRunning = false;
+constexpr uint8_t PUSH_QUEUE_DEPTH = 4;
+QueueHandle_t pushQueue = nullptr;
 
-void pushSmsTask(void* arg) {
-  PushJob* job = static_cast<PushJob*>(arg);
-  sendSMSToServer(job->sender, job->message, job->timestamp);
-  String subject = "收到短信";
-  String body = "发送者：";
-  body += job->sender;
-  body += "\n时间：";
-  body += job->timestamp;
-  body += "\n内容：";
-  body += job->message;
-  sendEmailNotification(subject.c_str(), body.c_str());
-  delete job;
-  pushTaskRunning = false;
-  vTaskDelete(nullptr);
+void pushWorkerTask(void*) {
+  PushJob job;
+  for (;;) {
+    xQueueReceive(pushQueue, &job, portMAX_DELAY);
+    sendSMSToServer(job.sender, job.message, job.timestamp);
+    String subject = "收到短信";
+    String body = "发送者：";
+    body += job.sender;
+    body += "\n时间：";
+    body += job.timestamp;
+    body += "\n内容：";
+    body += job.message;
+    sendEmailNotification(subject.c_str(), body.c_str());
+  }
 }
 
 }  // namespace
 
 void pushSmsNotifyAsync(const char* sender, const char* message, const char* timestamp) {
-  if (pushTaskRunning) {
-    logCaptureLn(String("⚠️ 上一条通知仍在发送，本条跳过"));
-    return;
+  if (!pushQueue) {
+    pushQueue = xQueueCreate(PUSH_QUEUE_DEPTH, sizeof(PushJob));
+    if (!pushQueue) {
+      logCaptureLn(String("推送队列创建失败，改为同步发送"));
+      sendSMSToServer(sender, message, timestamp);
+      return;
+    }
   }
-  PushJob* job = new PushJob();
-  strlcpy(job->sender, sender ? sender : "", sizeof(job->sender));
-  strlcpy(job->message, message ? message : "", sizeof(job->message));
-  strlcpy(job->timestamp, timestamp ? timestamp : "", sizeof(job->timestamp));
-  pushTaskRunning = true;
-  if (xTaskCreate(pushSmsTask, "push", 16384, job, 1, nullptr) != pdPASS) {
-    pushTaskRunning = false;
-    delete job;
-    logCaptureLn(String("推送任务创建失败，改为同步发送"));
-    sendSMSToServer(sender, message, timestamp);
+  static bool workerStarted = false;
+  if (!workerStarted) {
+    if (xTaskCreate(pushWorkerTask, "push", 16384, nullptr, 1, nullptr) != pdPASS) {
+      logCaptureLn(String("推送任务创建失败，改为同步发送"));
+      sendSMSToServer(sender, message, timestamp);
+      return;
+    }
+    workerStarted = true;
+  }
+  PushJob job;
+  strlcpy(job.sender, sender ? sender : "", sizeof(job.sender));
+  strlcpy(job.message, message ? message : "", sizeof(job.message));
+  strlcpy(job.timestamp, timestamp ? timestamp : "", sizeof(job.timestamp));
+  if (xQueueSend(pushQueue, &job, 0) != pdTRUE) {
+    logCaptureLn(String("推送队列已满，本条通知被丢弃"));
+  } else {
+    logCaptureF("通知已入队(等待中:%u)\n", static_cast<unsigned>(uxQueueMessagesWaiting(pushQueue)));
   }
 }
