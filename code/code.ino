@@ -90,6 +90,7 @@ void setup() {
 
   // ---- 模组初始化（较慢，但网页已可访问） ----
   modemInit();
+  queryPhoneNumber();
   esimManagerBegin();
   simManagerBegin();
   operatorManagerBegin();
