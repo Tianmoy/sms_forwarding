@@ -9,6 +9,7 @@ constexpr uint8_t MAX_SESSIONS = 2;
 constexpr unsigned long IDLE_TIMEOUT_MS = 30UL * 60UL * 1000UL;
 constexpr unsigned long ABS_TIMEOUT_MS = 8UL * 60UL * 60UL * 1000UL;
 constexpr unsigned long LOGIN_LOCK_MS = 30UL * 1000UL;
+constexpr unsigned long MAX_LOCK_MS = 15UL * 60UL * 1000UL;
 
 struct WebSession {
   bool active = false;
@@ -101,12 +102,8 @@ WebSession *allocateSession() {
 }  // namespace
 
 void authBegin() {
-  static const char *headers[] = {"Authorization"};
+  static const char *headers[] = {"Authorization", "If-None-Match"};
   server.collectHeaders(headers, sizeof(headers) / sizeof(headers[0]));
-}
-
-bool authIsAuthenticated() {
-  return currentSession() != nullptr;
 }
 
 bool authRequire() {
@@ -155,9 +152,12 @@ void handleApiLogin() {
   if (username.length() > 64 || password.length() > 128 ||
       !secureEquals(username, config.webUser) || !secureEquals(password, config.webPass)) {
     failedLogins++;
-    if (failedLogins >= 5) {
-      failedLogins = 0;
-      lockedUntil = now + LOGIN_LOCK_MS;
+    // 每凑满 5 次失败锁定一次,时长 30s 起逐级翻倍,封顶 15 分钟;成功登录才清零。
+    if (failedLogins % 5 == 0) {
+      uint8_t step = failedLogins / 5;
+      unsigned long lockMs = LOGIN_LOCK_MS << (step - 1);
+      if (lockMs == 0 || lockMs > MAX_LOCK_MS) lockMs = MAX_LOCK_MS;
+      lockedUntil = now + lockMs;
     }
     sendJsonResponse(401, "{\"ok\":false,\"error\":\"invalid_credentials\"}");
     return;

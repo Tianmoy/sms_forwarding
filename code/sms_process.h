@@ -1,4 +1,4 @@
-#ifndef SMS_PROCESS_H
+﻿#ifndef SMS_PROCESS_H
 #define SMS_PROCESS_H
 
 #include "globals.h"

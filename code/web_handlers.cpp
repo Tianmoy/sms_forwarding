@@ -1,4 +1,4 @@
-#include "web_handlers.h"
+﻿#include "web_handlers.h"
 #include "web_html.h"
 #include "config.h"
 #include "modem.h"
@@ -185,115 +185,18 @@ void wifiStartAp() {
 
 // 处理配置页面请求
 void handleRoot() {
-  server.sendHeader("Cache-Control", "no-store");
+  // 页面内嵌全部静态资源,内容只在固件更新后变化;ETag 取编译时间,
+  // 浏览器刷新命中时走 304,不再重传 130KB 正文。
+  static const char PAGE_ETAG[] = "\"" __DATE__ " " __TIME__ "\"";
+  server.sendHeader("Cache-Control", "no-cache");
   server.sendHeader("X-Content-Type-Options", "nosniff");
+  server.sendHeader("ETag", PAGE_ETAG);
+  if (server.hasHeader("If-None-Match") && server.header("If-None-Match") == PAGE_ETAG) {
+    server.send(304, "text/html; charset=utf-8", "");
+    return;
+  }
   server.send_P(200, "text/html; charset=utf-8", htmlPage);
-  return;
-#if 0
-  if (!checkAuth()) return;
-  
-  String html = String(htmlPage);
-  html.replace("%IP%", WiFi.localIP().toString());
-  html.replace("%WIFI_SSID%", String(WiFi.SSID()));
-  html.replace("%FREE_HEAP%", String(ESP.getFreeHeap() / 1024) + " KB");
-  long uptimeSec = millis() / 1000;
-  char uptimeBuf[16];
-  snprintf(uptimeBuf, sizeof(uptimeBuf), "%ld:%02ld:%02ld", uptimeSec / 3600, (uptimeSec % 3600) / 60, uptimeSec % 60);
-  html.replace("%UPTIME%", String(uptimeBuf));
-  html.replace("%WEB_USER%", config.webUser);
-  html.replace("%WEB_PASS%", config.webPass);
-  html.replace("%SMTP_SERVER%", config.smtpServer);
-  html.replace("%SMTP_PORT%", String(config.smtpPort));
-  html.replace("%SMTP_USER%", config.smtpUser);
-  html.replace("%SMTP_PASS%", config.smtpPass);
-  html.replace("%SMTP_SEND_TO%", config.smtpSendTo);
-  html.replace("%ADMIN_PHONE%", config.adminPhone);
-  html.replace("%NUMBER_BLACK_LIST%", config.numberBlackList);
-
-  // 概览页面的配置状态
-  bool emailOk = config.smtpServer.length() > 0 && config.smtpUser.length() > 0 &&
-                 config.smtpPass.length() > 0 && config.smtpSendTo.length() > 0;
-  html.replace("%SMTP_CHECK%", emailOk ? "已配置" : "未配置");
-  html.replace("%MODEM_CHECK%", modemReady ? "已就绪" : "未就绪");
-  int pushCount = 0;
-  for (int i = 0; i < MAX_PUSH_CHANNELS; i++) {
-    if (config.pushChannels[i].enabled) pushCount++;
-  }
-  html.replace("%PUSH_COUNT%", String(pushCount));
-  
-  // 生成推送通道HTML
-  String channelsHtml = "";
-  for (int i = 0; i < MAX_PUSH_CHANNELS; i++) {
-    String idx = String(i);
-    String enabledClass = config.pushChannels[i].enabled ? " enabled" : "";
-    String checked = config.pushChannels[i].enabled ? " checked" : "";
-    
-    channelsHtml += "<div class=\"push-channel" + enabledClass + "\" id=\"channel" + idx + "\">";
-    channelsHtml += "<div class=\"push-channel-header\">";
-    channelsHtml += "<input type=\"checkbox\" name=\"push" + idx + "en\" id=\"push" + idx + "en\" onchange=\"toggleChannel(" + idx + ")\"" + checked + ">";
-    channelsHtml += "<label for=\"push" + idx + "en\" class=\"label-inline\">启用推送通道 " + String(i + 1) + "</label>";
-    channelsHtml += "</div>";
-    channelsHtml += "<div class=\"push-channel-body\">";
-    
-    // 通道名称
-    channelsHtml += "<div class=\"form-group\">";
-    channelsHtml += "<label>通道名称</label>";
-    channelsHtml += "<input type=\"text\" name=\"push" + idx + "name\" value=\"" + config.pushChannels[i].name + "\" placeholder=\"自定义名称\">";
-    channelsHtml += "</div>";
-    
-    // 推送类型
-    channelsHtml += "<div class=\"form-group\">";
-    channelsHtml += "<label>推送方式</label>";
-    channelsHtml += "<select name=\"push" + idx + "type\" id=\"push" + idx + "type\" onchange=\"updateTypeHint(" + idx + ")\">";
-    channelsHtml += "<option value=\"1\"" + String(config.pushChannels[i].type == PUSH_TYPE_POST_JSON ? " selected" : "") + ">POST JSON（通用格式）</option>";
-    channelsHtml += "<option value=\"2\"" + String(config.pushChannels[i].type == PUSH_TYPE_BARK ? " selected" : "") + ">Bark（iOS推送）</option>";
-    channelsHtml += "<option value=\"3\"" + String(config.pushChannels[i].type == PUSH_TYPE_GET ? " selected" : "") + ">GET请求（参数在URL中）</option>";
-    channelsHtml += "<option value=\"4\"" + String(config.pushChannels[i].type == PUSH_TYPE_DINGTALK ? " selected" : "") + ">钉钉机器人</option>";
-    channelsHtml += "<option value=\"5\"" + String(config.pushChannels[i].type == PUSH_TYPE_PUSHPLUS ? " selected" : "") + ">PushPlus</option>";
-    channelsHtml += "<option value=\"6\"" + String(config.pushChannels[i].type == PUSH_TYPE_SERVERCHAN ? " selected" : "") + ">Server酱</option>";
-    channelsHtml += "<option value=\"7\"" + String(config.pushChannels[i].type == PUSH_TYPE_CUSTOM ? " selected" : "") + ">自定义模板</option>";
-    channelsHtml += "<option value=\"8\"" + String(config.pushChannels[i].type == PUSH_TYPE_FEISHU ? " selected" : "") + ">飞书机器人</option>";
-    channelsHtml += "<option value=\"9\"" + String(config.pushChannels[i].type == PUSH_TYPE_GOTIFY ? " selected" : "") + ">Gotify</option>";
-    channelsHtml += "<option value=\"10\"" + String(config.pushChannels[i].type == PUSH_TYPE_TELEGRAM ? " selected" : "") + ">Telegram Bot</option>";
-    channelsHtml += "</select>";
-    channelsHtml += "<div class=\"push-type-hint\" id=\"hint" + idx + "\"></div>";
-    channelsHtml += "</div>";
-    
-    // URL
-    channelsHtml += "<div class=\"form-group\">";
-    channelsHtml += "<label>推送URL/Webhook</label>";
-    channelsHtml += "<input type=\"text\" name=\"push" + idx + "url\" value=\"" + config.pushChannels[i].url + "\" placeholder=\"http://your-server.com/api 或 webhook地址\">";
-    channelsHtml += "</div>";
-    
-    // 额外参数区域（钉钉/PushPlus/Server酱等需要）
-    channelsHtml += "<div id=\"extra" + idx + "\" style=\"display:none;\">";
-    channelsHtml += "<div class=\"form-group\">";
-    channelsHtml += "<label id=\"key1label" + idx + "\">参数1</label>";
-    channelsHtml += "<input type=\"text\" name=\"push" + idx + "key1\" id=\"key1" + idx + "\" value=\"" + config.pushChannels[i].key1 + "\">";
-    channelsHtml += "</div>";
-    channelsHtml += "<div class=\"form-group\" id=\"key2group" + idx + "\">";
-    channelsHtml += "<label id=\"key2label" + idx + "\">参数2</label>";
-    channelsHtml += "<input type=\"text\" name=\"push" + idx + "key2\" id=\"key2" + idx + "\" value=\"" + config.pushChannels[i].key2 + "\">";
-    channelsHtml += "</div>";
-    channelsHtml += "</div>";
-    
-    // 自定义模板区域
-    channelsHtml += "<div id=\"custom" + idx + "\" style=\"display:none;\">";
-    channelsHtml += "<div class=\"form-group\">";
-    channelsHtml += "<label>请求体模板（使用 {sender} {message} {timestamp} 占位符）</label>";
-    channelsHtml += "<textarea name=\"push" + idx + "body\" rows=\"4\" style=\"width:100%;font-family:monospace;\">" + config.pushChannels[i].customBody + "</textarea>";
-    channelsHtml += "</div>";
-    channelsHtml += "</div>";
-    
-    channelsHtml += "</div></div>";
-  }
-  html.replace("%PUSH_CHANNELS%", channelsHtml);
-  
-  server.send(200, "text/html", html);
-#endif
 }
-
-
 
 // 处理AT指令测试请求
 void handleATCommand() {
@@ -624,46 +527,6 @@ void handleQuery() {
   json += "\"message\":\"" + jsonEscape(message) + "\"";
   json += "}";
   
-  server.send(200, "application/json", json);
-}
-
-// 处理发送短信请求
-void handleSendSms() {
-  if (!authRequireCsrf()) return;
-  if (!simManagerIsReady() || !simManagerSmsReady()) {
-    server.send(409, "application/json",
-                "{\"success\":false,\"message\":\"SIM 或短信服务尚未就绪\"}");
-    return;
-  }
-  if (esimIsBusy()) {
-    server.send(409, "application/json", "{\"success\":false,\"message\":\"eSIM切换中，无法发送短信\"}");
-    return;
-  }
-  
-  String phone = server.arg("phone");
-  String content = server.arg("content");
-  
-  phone.trim();
-  content.trim();
-  
-  bool success = false;
-  String resultMsg = "";
-
-  if (phone.length() == 0) {
-    resultMsg = "错误：请输入目标号码";
-  } else if (content.length() == 0) {
-    resultMsg = "错误：请输入短信内容";
-  } else {
-    logCaptureLn(String("网页端发送短信请求"));
-    logCaptureLn(String("目标号码: " + phone));
-    logCaptureLn(String("短信内容: " + content));
-
-    success = sendSMS(phone.c_str(), content.c_str());
-    resultMsg = success ? "短信发送成功" : "短信发送失败，请检查模组状态";
-  }
-
-  String json = "{\"success\":" + String(success ? "true" : "false") +
-                ",\"message\":\"" + jsonEscape(resultMsg) + "\"}";
   server.send(200, "application/json", json);
 }
 

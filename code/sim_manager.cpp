@@ -1,4 +1,4 @@
-#include "sim_manager.h"
+﻿#include "sim_manager.h"
 
 #include "esim_manager.h"
 #include "globals.h"
@@ -13,7 +13,6 @@ constexpr unsigned long DETECT_INTERVAL_READY_MS = 2000UL;
 constexpr unsigned long DETECT_INTERVAL_RETRY_MS = 1000UL;
 constexpr unsigned long DETECT_CONFIRM_MS = 350UL;
 constexpr unsigned long COMMAND_TIMEOUT_MS = 2500UL;
-constexpr unsigned long CGACT_TIMEOUT_MS = 5000UL;
 constexpr unsigned long SIGNAL_INTERVAL_MS = 10000UL;
 constexpr unsigned long SIGNAL_STALE_MS = 45000UL;
 constexpr size_t RESPONSE_CAPACITY = 640;
@@ -44,7 +43,6 @@ enum WireStage {
   WIRE_IDLE,
   WIRE_CPIN,
   WIRE_CMEE,
-  WIRE_CGACT,
   WIRE_ICCID,
   WIRE_CNUM,
   WIRE_CNMI,
@@ -513,10 +511,6 @@ void handleWireResult(WireStage completed, bool ok) {
       // the normal two-sample debounce before publishing it.
       needsConfigure = false;
       observe(observation);
-    } else if (completed == WIRE_CGACT) {
-      // Disabling the PDP context is a safety best effort. SMS reception does
-      // not depend on it, so continue restoring the mandatory settings.
-      startWire("AT+ICCID", WIRE_ICCID);
     } else if (completed == WIRE_ICCID) {
       // ICCID is receiver metadata only. Never block SMS recovery when a
       // modem temporarily refuses this optional query.
@@ -556,9 +550,6 @@ void handleWireResult(WireStage completed, bool ok) {
         transportFailures = 0;
         nextActionAt = millis();
       }
-      break;
-    case WIRE_CGACT:
-      startWire("AT+ICCID", WIRE_ICCID);
       break;
     case WIRE_ICCID:
       activeIccidTail = iccidTail;
@@ -621,8 +612,6 @@ void drainWire() {
         nextActionAt = millis() + DETECT_INTERVAL_READY_MS;
       } else if (completed == WIRE_CESQ) {
         signalNextAt = millis() + SIGNAL_INTERVAL_MS;
-      } else if (completed == WIRE_CGACT) {
-        startWire("AT+ICCID", WIRE_ICCID);
       } else if (completed == WIRE_ICCID) {
         activeIccidTail = "";
         startWire("AT+CNUM", WIRE_CNUM);
@@ -654,8 +643,6 @@ void drainWire() {
       nextActionAt = millis() + DETECT_INTERVAL_READY_MS;
     } else if (completed == WIRE_CESQ) {
       signalNextAt = millis() + SIGNAL_INTERVAL_MS;
-    } else if (completed == WIRE_CGACT) {
-      startWire("AT+ICCID", WIRE_ICCID);
     } else if (completed == WIRE_ICCID) {
       activeIccidTail = "";
       startWire("AT+CNUM", WIRE_CNUM);

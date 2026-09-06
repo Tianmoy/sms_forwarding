@@ -79,8 +79,6 @@ struct Config {
   String webUser;      // Web管理账号
   String webPass;      // Web管理密码
   String numberBlackList;  // 号码黑名单（换行符分隔）
-  String wifiSsid;     // 兼容字段:仅用于旧键迁移
-  String wifiPass;
   WifiNet wifiNets[WIFI_NETS_MAX];
   String brandTitle;      // 界面品牌主标题
   String brandSub;        // 界面品牌副标题

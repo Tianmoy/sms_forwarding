@@ -34,7 +34,6 @@ void handleApiStatus() {
   bool signalKnown = simManagerIsPresent() && simManagerSignalKnown();
   bool rsrqKnown = signalKnown && simManagerSignalRsrqKnown();
   String rsrpJson = signalKnown ? String(simManagerSignalRsrpDbm()) : String("null");
-  String rsrpRawJson = signalKnown ? String(simManagerSignalRsrpRaw()) : String("null");
   String eidCache;
   if (esimProfilesLoaded()) {
     String eidErr;
@@ -43,42 +42,84 @@ void handleApiStatus() {
   String rsrqJson = rsrqKnown
                         ? String(simManagerSignalRsrqTenthsDb() / 10.0f, 1)
                         : String("null");
-  unsigned long signalUpdatedAt = signalKnown ? simManagerSignalUpdatedAt() : 0;
-  unsigned long signalAge = signalKnown ? millis() - signalUpdatedAt : 0;
+  // 逐段 += 复用同一缓冲区;链式 A+B+C 表达式会反复构造临时 String,堆碎片严重。
   String json;
-  json.reserve(1080);
-  json = "{\"ok\":true,\"uptime\":" + String(millis() / 1000) +
-         ",\"heap\":" + String(ESP.getFreeHeap()) + ",\"epoch\":" + String(static_cast<unsigned long>(time(nullptr))) +
-         ",\"wifi\":{\"connected\":" + String(WiFi.isConnected() ? "true" : "false") +
-         ",\"ssid\":\"" + jsonEscape(WiFi.SSID()) + "\",\"rssi\":" + String(WiFi.RSSI()) +
-         ",\"ip\":\"" + WiFi.localIP().toString() + "\"},\"modem\":{\"ready\":" +
-         String(modemReady ? "true" : "false") + ",\"model\":\"ML307R\",\"operator\":\"" +
-         jsonEscape(networkOperator) + "\",\"busy\":" +
-         String(modemIsBusy() ? "true" : "false") +
-         ",\"registration\":\"" + String(modemReady ? "已注册" : "未注册") +
-         "\",\"rsrp\":" + rsrpJson + ",\"rsrq\":" + rsrqJson +
-         ",\"signal\":{\"known\":" + String(signalKnown ? "true" : "false") +
-         ",\"metric\":\"RSRP\",\"dbm\":" + rsrpJson + ",\"raw\":" + rsrpRawJson +
-         ",\"rsrq\":" + rsrqJson + ",\"updatedAt\":" + String(signalUpdatedAt) +
-         ",\"ageMs\":" + String(signalAge) + "}},\"sim\":{\"state\":\"" + simManagerStateName() +
-         "\",\"known\":" + String(simManagerIsKnown() ? "true" : "false") +
-         ",\"present\":" + String(simManagerIsPresent() ? "true" : "false") +
-         ",\"ready\":" + String(simManagerIsReady() ? "true" : "false") +
-         ",\"smsReady\":" + String(simManagerSmsReady() ? "true" : "false") +
-         ",\"message\":\"" + jsonEscape(simManagerMessage()) +
-         "\",\"generation\":" + String(simManagerGeneration()) +
-         ",\"changedAt\":" + String(simManagerChangedAt()) + ",\"profile\":\"" +
-          jsonEscape(activeProfile) + "\",\"iccidTail\":\"" + simManagerIccidTail() + "\",\"phone\":\"" + jsonEscape(simPhoneNumber) + "\",\"operator\":\"" + jsonEscape(networkOperator) + "\",\"eid\":\"" + jsonEscape(eidCache) + "\",\"name\":\"" + jsonEscape(activeProfile) +
-         "\",\"profileName\":\"" + jsonEscape(activeProfile) + "\"},\"sms\":{\"stored\":" + String(smsStoreCount()) +
-         ",\"unread\":" + String(smsStoreUnread()) + ",\"capacity\":50},\"push\":{\"enabled\":" +
-         String(enabledPush) + "},\"job\":" + esimJobJson() + "}";
+  json.reserve(1600);
+  json += F("{\"ok\":true,\"uptime\":");
+  json += String(millis() / 1000);
+  json += F(",\"heap\":");
+  json += String(ESP.getFreeHeap());
+  json += F(",\"epoch\":");
+  json += String(static_cast<unsigned long>(time(nullptr)));
+  json += F(",\"wifi\":{\"connected\":");
+  json += String(WiFi.isConnected() ? "true" : "false");
+  json += F(",\"ssid\":\"");
+  json += jsonEscape(WiFi.SSID());
+  json += F("\",\"rssi\":");
+  json += String(WiFi.RSSI());
+  json += F(",\"ip\":\"");
+  json += WiFi.localIP().toString();
+  json += F("\"},\"modem\":{\"ready\":");
+  json += String(modemReady ? "true" : "false");
+  json += F(",\"model\":\"ML307R\",\"operator\":\"");
+  json += jsonEscape(networkOperator);
+  json += F("\",\"busy\":");
+  json += String(modemIsBusy() ? "true" : "false");
+  json += F(",\"registration\":\"");
+  json += String(modemReady ? "已注册" : "未注册");
+  json += F("\",\"rsrp\":");
+  json += rsrpJson;
+  json += F(",\"rsrq\":");
+  json += rsrqJson;
+  json += F(",\"signal\":{\"known\":");
+  json += String(signalKnown ? "true" : "false");
+  json += F(",\"metric\":\"RSRP\",\"dbm\":");
+  json += rsrpJson;
+  json += F(",\"rsrq\":");
+  json += rsrqJson;
+  json += F("}},\"sim\":{\"state\":\"");
+  json += simManagerStateName();
+  json += F("\",\"known\":");
+  json += String(simManagerIsKnown() ? "true" : "false");
+  json += F(",\"present\":");
+  json += String(simManagerIsPresent() ? "true" : "false");
+  json += F(",\"ready\":");
+  json += String(simManagerIsReady() ? "true" : "false");
+  json += F(",\"smsReady\":");
+  json += String(simManagerSmsReady() ? "true" : "false");
+  json += F(",\"message\":\"");
+  json += jsonEscape(simManagerMessage());
+  json += F("\",\"generation\":");
+  json += String(simManagerGeneration());
+  json += F(",\"changedAt\":");
+  json += String(simManagerChangedAt());
+  json += F(",\"profile\":\"");
+  json += jsonEscape(activeProfile);
+  json += F("\",\"iccidTail\":\"");
+  json += simManagerIccidTail();
+  json += F("\",\"phone\":\"");
+  json += jsonEscape(simPhoneNumber);
+  json += F("\",\"operator\":\"");
+  json += jsonEscape(networkOperator);
+  json += F("\",\"eid\":\"");
+  json += jsonEscape(eidCache);
+  json += F("\"},\"sms\":{\"stored\":");
+  json += String(smsStoreCount());
+  json += F(",\"unread\":");
+  json += String(smsStoreUnread());
+  json += F(",\"capacity\":50},\"push\":{\"enabled\":");
+  json += String(enabledPush);
+  json += F("},\"job\":");
+  json += esimJobJson();
+  json += '}';
   sendJsonResponse(200, json);
 }
 
 void handleApiSmsList() {
   if (!authRequire()) return;
   String messages = smsStoreListJson();
-  String json = "{\"ok\":true,\"count\":" + String(smsStoreCount()) + ",\"unread\":" +
+  String json = "{\"ok\":true,\"rev\":" + String(smsStoreRev()) +
+                ",\"count\":" + String(smsStoreCount()) + ",\"unread\":" +
                 String(smsStoreUnread()) + ",\"capacity\":50,\"messages\":" + messages + "}";
   sendJsonResponse(200, json);
 }
@@ -382,6 +423,19 @@ void handleApiBrand() {
 
 void handleApiSmsSend() {
   if (!authRequire()) return;
+  String phone = server.arg("phone");
+  String content = server.arg("content");
+  phone.trim();
+  content.trim();
+  bool phoneValid = phone.length() >= 3 && phone.length() <= 20;
+  for (size_t i = 0; phoneValid && i < phone.length(); ++i) {
+    char c = phone[i];
+    if (!isdigit(static_cast<unsigned char>(c)) && !(i == 0 && c == '+')) phoneValid = false;
+  }
+  if (!phoneValid || content.length() == 0) {
+    sendJsonResponse(400, "{\"ok\":false,\"message\":\"号码仅允许数字与前置 + 号\"}");
+    return;
+  }
   if (!simManagerIsReady() || !simManagerSmsReady()) {
     sendJsonResponse(409, "{\"ok\":false,\"message\":\"SIM 或短信服务尚未就绪\"}");
     return;
@@ -392,14 +446,6 @@ void handleApiSmsSend() {
   }
   if (modemIsBusy()) {
     sendJsonResponse(409, "{\"ok\":false,\"message\":\"模组正在初始化或处理其他通信，请稍后重试\"}");
-    return;
-  }
-  String phone = server.arg("phone");
-  String content = server.arg("content");
-  phone.trim();
-  content.trim();
-  if (phone.length() == 0 || content.length() == 0) {
-    sendJsonResponse(400, "{\"ok\":false,\"message\":\"请填写目标号码和短信内容\"}");
     return;
   }
   logCaptureLn(String("网页端发送短信请求"));
@@ -436,10 +482,7 @@ void handleApiConfigGet() {
             "\",\"urlSet\":" + String(ch.url.length() ? "true" : "false") +
             ",\"key1Set\":" + String(ch.key1.length() ? "true" : "false") +
             ",\"key2Set\":" + String(ch.key2.length() ? "true" : "false") +
-            ",\"urlConfigured\":" + String(ch.url.length() ? "true" : "false") +
-            ",\"key1Configured\":" + String(ch.key1.length() ? "true" : "false") +
-             ",\"key2Configured\":" + String(ch.key2.length() ? "true" : "false") +
-             ",\"customBody\":\"" + jsonEscape(ch.customBody) + "\"}";
+            ",\"customBody\":\"" + jsonEscape(ch.customBody) + "\"}";
    }
   json += "],\"wifi\":{\"nets\":[";
   for (int i = 0; i < WIFI_NETS_MAX; ++i) {
@@ -465,7 +508,7 @@ void handleApiConfigGet() {
             "\",\"body\":\"" + jsonEscape(config.tasks[i].body) + "\"}";
   }
   json += "],\"pollSeconds\":" + String(config.pollSeconds) +
-         ",\"apiToken\":\"" + jsonEscape(config.apiToken) + "\"}";
+         ",\"apiTokenSet\":" + String(config.apiToken.length() > 0 ? "true" : "false") + "}";
   sendJsonResponse(200, json);
 }
 

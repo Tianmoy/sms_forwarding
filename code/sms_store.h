@@ -28,4 +28,8 @@ bool smsStoreClear();
 size_t smsStoreCount();
 size_t smsStoreUnread();
 
+// Monotonic counter bumped by every add/markRead/delete/clear. Clients use it
+// to skip re-rendering an unchanged list.
+uint32_t smsStoreRev();
+
 #endif

@@ -92,7 +92,9 @@ int64_t getUtcMillis() {
 
 // JSON转义函数
 String jsonEscape(const String& str) {
+  static const char hex[] = "0123456789ABCDEF";
   String result = "";
+  result.reserve(str.length());
   for (unsigned int i = 0; i < str.length(); i++) {
     char c = str.charAt(i);
     if (c == '"') result += "\\\"";
@@ -100,6 +102,14 @@ String jsonEscape(const String& str) {
     else if (c == '\n') result += "\\n";
     else if (c == '\r') result += "\\r";
     else if (c == '\t') result += "\\t";
+    else if (c == '\b') result += "\\b";
+    else if (c == '\f') result += "\\f";
+    else if (static_cast<unsigned char>(c) < 0x20) {
+      // 控制字符必须转义,否则短信正文可产生非法 JSON
+      result += "\\u00";
+      result += hex[(static_cast<unsigned char>(c) >> 4) & 0x0F];
+      result += hex[static_cast<unsigned char>(c) & 0x0F];
+    }
     else result += c;
   }
   return result;

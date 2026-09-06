@@ -1,4 +1,4 @@
-#include "sms_store.h"
+﻿#include "sms_store.h"
 
 #include <LittleFS.h>
 #include <stddef.h>
@@ -51,6 +51,7 @@ StoreHeader storeHeader = {};
 bool storeReady = false;
 size_t activeCount = 0;
 size_t unreadCount = 0;
+uint32_t storeRev = 0;
 
 uint32_t crc32Of(const uint8_t* data, size_t length) {
   uint32_t crc = 0xFFFFFFFFUL;
@@ -284,37 +285,6 @@ bool findRecord(File& file, uint32_t id, uint16_t& slotOut, StoredSms& recordOut
   return false;
 }
 
-size_t decimalLength(uint32_t value) {
-  size_t length = 1;
-  while (value >= 10) {
-    value /= 10;
-    ++length;
-  }
-  return length;
-}
-
-size_t jsonEscapedLength(const char* text) {
-  size_t length = 0;
-  for (const uint8_t* cursor = reinterpret_cast<const uint8_t*>(text);
-       *cursor != 0; ++cursor) {
-    switch (*cursor) {
-      case '"':
-      case '\\':
-      case '\b':
-      case '\f':
-      case '\n':
-      case '\r':
-      case '\t':
-        length += 2;
-        break;
-      default:
-        length += *cursor < 0x20U ? 6 : 1;
-        break;
-    }
-  }
-  return length;
-}
-
 void appendJsonEscaped(String& json, const char* text) {
   static constexpr char hex[] = "0123456789ABCDEF";
   for (const uint8_t* cursor = reinterpret_cast<const uint8_t*>(text);
@@ -338,21 +308,6 @@ void appendJsonEscaped(String& json, const char* text) {
         break;
     }
   }
-}
-
-size_t recordJsonLength(const StoredSms& record) {
-  size_t length = sizeof("{\"id\":") - 1 + decimalLength(record.id);
-  length += sizeof(",\"sender\":\"") - 1 + jsonEscapedLength(record.sender) + 1;
-  length += sizeof(",\"receiver\":\"") - 1 + jsonEscapedLength(record.profile) + 1;
-  length += sizeof(",\"body\":\"") - 1 + jsonEscapedLength(record.body) + 1;
-  length += sizeof(",\"timestamp\":\"") - 1 +
-            jsonEscapedLength(record.timestamp) + 1;
-  length += sizeof(",\"profile\":\"") - 1 + jsonEscapedLength(record.profile) + 1;
-  length += sizeof(",\"read\":") - 1 +
-            ((record.flags & kFlagRead) != 0 ? 4 : 5);
-  length += sizeof(",\"complete\":") - 1 +
-            ((record.flags & kFlagComplete) != 0 ? 4 : 5);
-  return length + 1;  // closing object brace
 }
 
 void appendRecordJson(String& json, const StoredSms& record) {
@@ -473,6 +428,7 @@ uint32_t smsStoreAdd(const char* sender,
   ++activeCount;
   ++unreadCount;
 
+  ++storeRev;
   storeHeader.writeIndex = (slot + 1U) % kCapacity;
   storeHeader.nextId = nextNonZeroId(record.id);
   // The record is already durable. If the header update is interrupted, begin()
@@ -509,22 +465,9 @@ String smsStoreListJson() {
     refs[j] = key;
   }
 
-  size_t requiredLength = 2 + (refCount > 0 ? refCount - 1 : 0);
-  for (size_t i = 0; i < refCount; ++i) {
-    StoredSms record = {};
-    if (!readRecord(file, refs[i].slot, record)) {
-      file.close();
-      return String(F("[]"));
-    }
-    terminateRecordStrings(record);
-    requiredLength += recordJsonLength(record);
-  }
-
+  // 单遍读取构建;容量按记录体上限估算,一次 reserve 后只做追加。
   String json;
-  if (!json.reserve(requiredLength)) {
-    file.close();
-    return String(F("[]"));
-  }
+  json.reserve(refCount * 850 + 16);
   json += '[';
   for (size_t i = 0; i < refCount; ++i) {
     StoredSms record = {};
@@ -539,7 +482,7 @@ String smsStoreListJson() {
   json += ']';
   file.close();
 
-  return json.length() == requiredLength ? json : String(F("[]"));
+  return json;
 }
 
 bool smsStoreMarkRead(uint32_t id) {
@@ -563,7 +506,10 @@ bool smsStoreMarkRead(uint32_t id) {
   record.flags |= kFlagRead;
   const bool written = writeRecord(file, slot, record);
   file.close();
-  if (written && unreadCount > 0) --unreadCount;
+  if (written) {
+    ++storeRev;
+    if (unreadCount > 0) --unreadCount;
+  }
   return written;
 }
 
@@ -589,6 +535,7 @@ bool smsStoreDelete(uint32_t id) {
   const bool written = writeRecord(file, slot, record);
   file.close();
   if (written) {
+    ++storeRev;
     if (activeCount > 0) --activeCount;
     if (wasUnread && unreadCount > 0) --unreadCount;
   }
@@ -599,6 +546,7 @@ bool smsStoreClear() {
   if (!storeReady) return false;
   const uint32_t nextId = storeHeader.nextId;
   storeReady = false;
+  ++storeRev;
   storeReady = createFreshStore(nextId);
   return storeReady;
 }
@@ -609,4 +557,8 @@ size_t smsStoreCount() {
 
 size_t smsStoreUnread() {
   return storeReady ? unreadCount : 0;
+}
+
+uint32_t smsStoreRev() {
+  return storeRev;
 }

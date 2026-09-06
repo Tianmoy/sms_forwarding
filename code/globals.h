@@ -24,7 +24,6 @@
 
 #define SERIAL_BUFFER_SIZE 500
 #define MODEM_RX_BUFFER_SIZE 8192
-#define MAX_PDU_LENGTH 300
 
 // 全局变量声明
 extern Config config;
@@ -35,7 +34,6 @@ extern SMTPClient smtp;
 extern WebServer server;
 extern bool configValid;
 extern bool modemReady;
-extern unsigned long lastPrintTime;
 extern ConcatSms concatBuffer[MAX_CONCAT_MESSAGES];
 extern String simPhoneNumber;
 

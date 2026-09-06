@@ -4,7 +4,6 @@
 #include "globals.h"
 
 void authBegin();
-bool authIsAuthenticated();
 bool authRequire();
 bool authRequireCsrf();
 void authInvalidateAll();

@@ -185,7 +185,6 @@ int parseChannel(const String &response) {
 
 enum IsdrTransport {
   TRANSPORT_CGLA,         // 原生 AT+CCHO/CGLA
-  TRANSPORT_CSIM_LOGICAL, // CSIM 手动开逻辑通道
   TRANSPORT_CSIM_BASIC    // CSIM 基础通道直连 ISD-R
 };
 uint8_t isdrTransport = TRANSPORT_CGLA;
@@ -256,11 +255,6 @@ void closeChannel(int channel) {
   if (isdrTransport == TRANSPORT_CGLA) {
     String cmd = "AT+CCHC=" + String(channel);
     sendATCommand(cmd.c_str(), 2000);
-  } else if (isdrTransport == TRANSPORT_CSIM_LOGICAL) {
-    String data;
-    uint16_t status = 0;
-    String error;
-    csimExchange("00708000" + hexByte(channel), data, status, error);
   }
 }
 
@@ -619,17 +613,16 @@ String esimProfilesJson() {
   for (uint8_t i = 0; i < profileCount; ++i) {
     if (profiles[i].enabled) activeId = profiles[i].id;
   }
-  String json = "{\"ok\":true,\"supported\":true,\"updatedAt\":" + String(profilesUpdatedAt) +
+  String json = "{\"ok\":true,\"updatedAt\":" + String(profilesUpdatedAt) +
                 ",\"activeId\":\"" + activeId + "\",\"switching\":" +
                 String(job.active ? "true" : "false") + ",\"profiles\":[";
   for (uint8_t i = 0; i < profileCount; ++i) {
     if (i) json += ',';
     json += "{\"id\":\"" + profiles[i].id + "\",\"iccid\":\"" + jsonEscape(profiles[i].iccid) +
-            "\",\"provider\":\"" + jsonEscape(profiles[i].provider) + "\",\"operator\":\"" +
-            jsonEscape(profiles[i].provider) + "\",\"name\":\"" + jsonEscape(profiles[i].name) +
+            "\",\"operator\":\"" + jsonEscape(profiles[i].provider) +
+            "\",\"name\":\"" + jsonEscape(profiles[i].name) +
             "\",\"type\":\"eSIM\",\"status\":\"" + (profiles[i].enabled ? "当前使用中" : "可切换") +
-            "\",\"enabled\":" + (profiles[i].enabled ? "true" : "false") +
-            ",\"active\":" + (profiles[i].enabled ? "true" : "false") +
+            "\",\"active\":" + (profiles[i].enabled ? "true" : "false") +
             ",\"available\":" + (profiles[i].enabled ? "false" : "true") + "}";
   }
   json += "],\"job\":" + esimJobJson() + "}";
