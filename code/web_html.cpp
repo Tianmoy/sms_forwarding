@@ -202,9 +202,18 @@ const char* htmlPage = R"rawliteral(<!doctype html>
 <div class="form-grid"><label class="field"><span>修改管理密码（可选，至少 8 位）</span><input id="wizardPass" class="input" type="password" placeholder="留空则不修改"></label><label class="field"><span>确认新密码</span><input id="wizardPass2" class="input" type="password" placeholder="再输入一次"></label></div>
 <div class="btn-row" style="justify-content:flex-end"><button id="wizardSkipBtn" class="btn" type="button">稍后再说</button><button id="wizardSaveBtn" class="btn accent" type="button">保存并重启</button></div>
 </div></div>
-<nav class="mobile-nav" aria-label="移动端导航"><button class="nav-btn active" data-view="dashboard"><svg class="ico"><use href="#i-grid"/></svg><span>状态</span></button><button class="nav-btn" data-view="sms"><svg class="ico"><use href="#i-msg"/></svg><span>短信</span></button><button class="nav-btn" data-view="esim"><svg class="ico"><use href="#i-sim"/></svg><span>SIM</span></button><button class="nav-btn" data-view="settings"><svg class="ico"><use href="#i-set"/></svg><span>更多</span></button></nav>
+<nav class="mobile-nav" aria-label="移动端导航"><button class="nav-btn active" data-view="dashboard"><svg class="ico"><use href="#i-grid"/></svg><span>仪表盘</span></button><button class="nav-btn" data-view="sms"><svg class="ico"><use href="#i-msg"/></svg><span>短信</span></button><button class="nav-btn" data-view="esim"><svg class="ico"><use href="#i-sim"/></svg><span>SIM</span></button><button class="nav-btn" data-view="more"><svg class="ico"><use href="#i-set"/></svg><span>更多</span></button></nav>
 </div>
 <div id="modalWrap" class="modal-wrap" hidden><section id="modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle" aria-describedby="modalBody"><h2 id="modalTitle">确认操作</h2><p id="modalBody"></p><div class="btn-row"><button id="modalCancel" class="btn">取消</button><button id="modalConfirm" class="btn accent">确认</button></div></section></div>
+<div id="moreSheet" class="modal-wrap" hidden><div style="position:absolute;bottom:0;left:0;right:0;background:#131316;border-top:1px solid var(--line);border-radius:16px 16px 0 0;padding:14px 14px calc(14px + env(safe-area-inset-bottom));max-width:520px;margin:0 auto;width:100%">
+<div style="width:36px;height:4px;border-radius:2px;background:#3f3f46;margin:0 auto 12px"></div>
+<div style="display:grid;gap:6px">
+<button class="btn" data-view="push" style="width:100%;text-align:left">📡 推送通道</button>
+<button class="btn" data-view="tasks" style="width:100%;text-align:left">⏰ 定时任务</button>
+<button class="btn" data-view="diagnostics" style="width:100%;text-align:left">🔧 诊断中心</button>
+<button class="btn" data-view="settings" style="width:100%;text-align:left">⚙️ 系统设置</button>
+</div>
+</div></div>
 <div id="toast" class="toast" role="status" aria-live="polite"></div><div id="srStatus" class="sr" aria-live="polite"></div>
 <script>
 (function(){
@@ -223,7 +232,14 @@ function setBusy(btn,on,label){if(!btn)return; if(on){btn.dataset.label=btn.text
 function formBody(form){var p=new URLSearchParams(new FormData(form));$$('[data-omit-empty]',form).forEach(function(e){if(!e.value)p.delete(e.name)});return p.toString()}
 async function api(url,opt,quiet){opt=opt||{};var headers=opt.headers||{};if(S.token)headers['Authorization']='Bearer '+S.token;opt.headers=headers;opt.credentials='same-origin';opt.cache='no-store';var r=await fetch(url,opt),raw=await r.text(),d={};if(raw){try{d=JSON.parse(raw)}catch(_){d={message:raw}}}if(r.status===401){if(url==='/api/login')throw new Error(d.error==='invalid_credentials'?'账号或密码错误':msg(d,'登录失败'));if(!quiet)showLogin('登录已失效，请重新登录');var ae=new Error('未登录');ae.auth=true;throw ae}if(r.status===429&&d.retryAfter)throw new Error('尝试次数过多，请 '+d.retryAfter+' 秒后重试');if(!r.ok)throw new Error(msg(d,'请求失败 '+r.status));return d}
 function post(url,body){return api(url,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'},body:typeof body==='string'?body:new URLSearchParams(body).toString()})}
-function applyBrand(){fetch('/api/brand').then(function(r){return r.json()}).then(function(b){if(!b||!b.ok)return;document.title=b.title+' · 短信转发';document.querySelectorAll('[data-brand-title]').forEach(function(e){e.textContent=b.title});document.querySelectorAll('[data-brand-sub]').forEach(function(e){e.textContent=b.sub});var m=(b.title||'').replace(/[^A-Za-z0-9]/g,'').slice(0,2).toUpperCase()||'SF';document.querySelectorAll('[data-brand-mark]').forEach(function(e){e.textContent=m})}).catch(function(){})}
+function setViewSafe(name){if(TITLES[name])setView(name)}
+    document.addEventListener('click',function(e){
+      var mb=e.target.closest('.mobile-nav [data-view="more"]');
+      if(mb){e.preventDefault();e.stopPropagation();$('#moreSheet').hidden=!$('#moreSheet').hidden;return}
+      if(e.target.closest('#moreSheet')){var sb=e.target.closest('[data-view]');if(sb){$('#moreSheet').hidden=true;setViewSafe(sb.dataset.view)}return}
+      if(!e.target.closest('#moreSheet')&&!e.target.closest('.mobile-nav')){$('#moreSheet').hidden=true}
+    });
+    function applyBrand(){fetch('/api/brand').then(function(r){return r.json()}).then(function(b){if(!b||!b.ok)return;document.title=b.title+' · 短信转发';document.querySelectorAll('[data-brand-title]').forEach(function(e){e.textContent=b.title});document.querySelectorAll('[data-brand-sub]').forEach(function(e){e.textContent=b.sub});var m=(b.title||'').replace(/[^A-Za-z0-9]/g,'').slice(0,2).toUpperCase()||'SF';document.querySelectorAll('[data-brand-mark]').forEach(function(e){e.textContent=m})}).catch(function(){})}
 applyBrand();try{S.pollMs=Number(localStorage.getItem('pollMs'))||5000}catch(_){};try{S.token=localStorage.getItem('tk')||''}catch(_){}{}
 function syncTaskSummary(){var rows=document.querySelectorAll('#taskList .task-row');var act=0;rows.forEach(function(r){var s=r.querySelector('select');if(s&&Number(s.value)>0)act++});$('#taskSummary').textContent=act?act+' 个启用':'未配置';$('#taskSummary').className='badge '+(act?'good':'')}
 var TASKS=[],TASK_EDIT=-1;
