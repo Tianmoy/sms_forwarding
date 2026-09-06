@@ -896,7 +896,9 @@ String esimActiveProfileLabel() {
     if (profiles[i].name.length()) return profiles[i].name;
     if (profiles[i].provider.length()) return profiles[i].provider;
   }
-  return "";
+  String tail = simManagerIccidTail();
+  if (tail.length() == 4) return String("SIM · ") + tail;
+  return "SIM";
 }
 
 String esimActiveProfileSmsLabel() {
