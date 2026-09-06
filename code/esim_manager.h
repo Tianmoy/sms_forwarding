@@ -7,6 +7,7 @@ void esimManagerBegin();
 void esimManagerLoop();
 bool esimRefreshProfiles(String &error);
 bool esimProfilesLoaded();
+bool esimCardIsEuicc();
 void esimManagerInvalidateProfiles();
 String esimProfilesJson();
 bool esimStartSwitch(const String &profileId, String &message);

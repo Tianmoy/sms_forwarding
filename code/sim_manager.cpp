@@ -46,11 +46,13 @@ enum WireStage {
   WIRE_CMEE,
   WIRE_CGACT,
   WIRE_ICCID,
+  WIRE_CNUM,
   WIRE_CNMI,
   WIRE_CMGF,
   WIRE_CEREG_ENABLE,
   WIRE_CEREG_QUERY,
   WIRE_CEREG_PROBE,
+  WIRE_CNUM_PROBE,
   WIRE_CESQ
 };
 
@@ -82,6 +84,8 @@ int signalRsrpRaw = -1;
 int signalRsrqRaw = -1;
 unsigned long signalUpdatedAt = 0;
 unsigned long signalNextAt = 0;
+unsigned long cnumRetryAt = 0;
+uint8_t cnumAttempts = 0;
 
 bool elapsed(unsigned long now, unsigned long deadline) {
   return static_cast<long>(now - deadline) >= 0;
@@ -244,6 +248,32 @@ String parseIccidTail(const char* response) {
   return tail;
 }
 
+String parseCnumNumber() {
+  // +CNUM: "+8613800138000",129 — 部分固件首字段是字母名称，取第一个纯号码的带引号字段
+  const char* marker = strstr(responseBuffer, "+CNUM:");
+  if (!marker) return "";
+  marker += strlen("+CNUM:");
+  while (*marker && *marker != '\r' && *marker != '\n') {
+    if (*marker != '"') {
+      ++marker;
+      continue;
+    }
+    const char* start = marker + 1;
+    const char* end = start;
+    while (*end && *end != '"' && *end != '\r' && *end != '\n') ++end;
+    size_t length = static_cast<size_t>(end - start);
+    size_t digits = (*start == '+') ? 1 : 0;
+    for (size_t i = digits; i < length; ++i) {
+      if (isDigit(start[i])) ++digits;
+    }
+    if (length >= 5 && digits == length) {
+      return String(start).substring(0, length);
+    }
+    marker = (*end == '"') ? end + 1 : end;
+  }
+  return "";
+}
+
 void clearSignalCache() {
   signalKnown = false;
   signalRsrqKnown = false;
@@ -284,6 +314,9 @@ void invalidateCardCaches() {
   smsReady = false;
   probeRegistrationNext = false;
   activeIccidTail = "";
+  simPhoneNumber = "";
+  cnumRetryAt = 0;
+  cnumAttempts = 0;
   clearSignalCache();
   esimManagerInvalidateProfiles();
   operatorManagerInvalidate();
@@ -488,7 +521,12 @@ void handleWireResult(WireStage completed, bool ok) {
       // ICCID is receiver metadata only. Never block SMS recovery when a
       // modem temporarily refuses this optional query.
       activeIccidTail = "";
+      startWire("AT+CNUM", WIRE_CNUM);
+    } else if (completed == WIRE_CNUM) {
+      // CNUM 同为可选元数据，拿不到号码时静默继续恢复短信服务。
       startWire("AT+CNMI=2,2,0,0,0", WIRE_CNMI);
+    } else if (completed == WIRE_CNUM_PROBE) {
+      nextActionAt = millis() + DETECT_INTERVAL_READY_MS;
     } else if (completed == WIRE_CMEE) {
       // During insertion recovery CMEE is best effort and configuration may
       // continue. During ordinary detection, retry CMEE later so a modem that
@@ -506,6 +544,9 @@ void handleWireResult(WireStage completed, bool ok) {
 
   int registration = completed == WIRE_CEREG_QUERY ? parseCeregStatus() : -1;
   String iccidTail = completed == WIRE_ICCID ? parseIccidTail(responseBuffer) : "";
+  String cnumNumber = (completed == WIRE_CNUM || completed == WIRE_CNUM_PROBE)
+                          ? parseCnumNumber()
+                          : "";
   releaseWire();
   switch (completed) {
     case WIRE_CMEE:
@@ -521,8 +562,24 @@ void handleWireResult(WireStage completed, bool ok) {
       break;
     case WIRE_ICCID:
       activeIccidTail = iccidTail;
+      startWire("AT+CNUM", WIRE_CNUM);
+      break;
+    case WIRE_CNUM:
+      simPhoneNumber = cnumNumber;
+      if (simPhoneNumber.length() > 0) {
+        logCaptureLn(String("本机号码: ") + simPhoneNumber);
+      }
       startWire("AT+CNMI=2,2,0,0,0", WIRE_CNMI);
       break;
+    case WIRE_CNUM_PROBE: {
+      // 注册后补查：多数模组在驻网后 CNUM 才返回本机号码。
+      simPhoneNumber = cnumNumber;
+      if (simPhoneNumber.length() > 0) {
+        logCaptureLn(String("本机号码: ") + simPhoneNumber);
+      }
+      nextActionAt = millis() + DETECT_INTERVAL_READY_MS;
+      break;
+    }
     case WIRE_CNMI:
       startWire("AT+CMGF=0", WIRE_CMGF);
       break;
@@ -568,7 +625,11 @@ void drainWire() {
         startWire("AT+ICCID", WIRE_ICCID);
       } else if (completed == WIRE_ICCID) {
         activeIccidTail = "";
+        startWire("AT+CNUM", WIRE_CNUM);
+      } else if (completed == WIRE_CNUM) {
         startWire("AT+CNMI=2,2,0,0,0", WIRE_CNMI);
+      } else if (completed == WIRE_CNUM_PROBE) {
+        nextActionAt = millis() + DETECT_INTERVAL_READY_MS;
       } else if (completed == WIRE_CMEE && !needsConfigure) {
         nextActionAt = millis() + DETECT_INTERVAL_RETRY_MS;
       } else {
@@ -597,7 +658,11 @@ void drainWire() {
       startWire("AT+ICCID", WIRE_ICCID);
     } else if (completed == WIRE_ICCID) {
       activeIccidTail = "";
+      startWire("AT+CNUM", WIRE_CNUM);
+    } else if (completed == WIRE_CNUM) {
       startWire("AT+CNMI=2,2,0,0,0", WIRE_CNMI);
+    } else if (completed == WIRE_CNUM_PROBE) {
+      nextActionAt = millis() + DETECT_INTERVAL_READY_MS;
     } else if (completed == WIRE_CMEE && !needsConfigure) {
       nextActionAt = millis() + DETECT_INTERVAL_RETRY_MS;
     } else {
@@ -666,6 +731,15 @@ void simManagerLoop() {
   }
   if (signalDue) {
     if (startWire("AT+CESQ", WIRE_CESQ)) signalNextAt = now + SIGNAL_INTERVAL_MS;
+    return;
+  }
+  if (state == SIM_READY && smsReady && modemReady && simPhoneNumber.isEmpty() &&
+      cnumAttempts < 40 && elapsed(now, cnumRetryAt)) {
+    // ML307A 驻网后 CNUM 才可能返回本机号码，注册确认前的一次查询常为空。
+    if (startWire("AT+CNUM", WIRE_CNUM_PROBE)) {
+      cnumRetryAt = now + 15000UL;
+      ++cnumAttempts;
+    }
     return;
   }
   startWire("AT+CPIN?", WIRE_CPIN);

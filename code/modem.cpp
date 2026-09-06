@@ -179,20 +179,6 @@ bool sendATandWaitOK(const char* cmd, unsigned long timeout) {
   return resp.indexOf("OK") >= 0 && resp.indexOf("ERROR") < 0;
 }
 
-void queryPhoneNumber() {
-  String cnumResp = sendATCommand("AT+CNUM", 3000);
-  int q1 = cnumResp.indexOf('"', cnumResp.indexOf("+CNUM:"));
-  if (q1 >= 0) {
-    int q2 = cnumResp.indexOf('"', q1 + 1);
-    if (q2 > q1) {
-      simPhoneNumber = cnumResp.substring(q1 + 1, q2);
-    }
-  }
-  if (simPhoneNumber.length() > 0) {
-    logCaptureLn(String("本机号码: ") + simPhoneNumber);
-  }
-}
-
 // 检测网络注册状态（LTE/4G）
 // CEREG状态: 1=已注册本地, 5=已注册漫游
 bool waitCEREG() {

@@ -640,6 +640,10 @@ bool esimProfilesLoaded() {
   return profileCount > 0;
 }
 
+bool esimCardIsEuicc() {
+  return cardIsEuicc;
+}
+
 void esimManagerInvalidateProfiles() {
   if (profileIoBusy) return;
   for (uint8_t i = 0; i < MAX_ESIM_PROFILES; ++i) profiles[i] = EsimProfile();

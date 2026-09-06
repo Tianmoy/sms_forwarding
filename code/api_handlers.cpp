@@ -138,6 +138,11 @@ void handleApiEsimProfiles() {
   if (!esimProfilesLoaded() && !esimIsBusy()) {
     String error;
     if (!esimRefreshProfiles(error)) {
+      // 非电信 eUICC 的普通 SIM 卡不是错误：前端按空 Profile 列表正常渲染。
+      if (!esimCardIsEuicc()) {
+        sendJsonResponse(200, "{\"ok\":true,\"profiles\":[],\"activeId\":\"\"}");
+        return;
+      }
       sendJsonResponse(503, "{\"ok\":false,\"error\":\"esim\",\"message\":\"" + jsonEscape(error) + "\"}");
       return;
     }
