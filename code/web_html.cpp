@@ -1,6 +1,5 @@
 #include "web_html.h"
 
-// 署名配置:改这两行即可全局生效(登录页 + 侧栏)
 #define AUTHOR_NAME "Tianmoy"
 #define AUTHOR_URL "https://github.com/Tianmoy/sms_forwarding"
 
@@ -55,7 +54,7 @@ const char* htmlPage = R"rawliteral(<!doctype html>
 <div class="brand"><span class="brand-mark" data-brand-mark>SF</span><div><strong data-brand-title>SMS FWD</strong><small data-brand-sub>愿你天黑有灯,下雨有伞</small></div></div>
 <div class="radio-art"><i class="wave w1"></i><i class="wave w2"></i><i class="wave w3"></i><i class="mast"></i></div>
 <div class="scene-copy"><p class="eyebrow">ESP32 · ML307R</p><h1>每一条短信，<br>都有迹可循。</h1><p>本地通信值守、实时收件、推送监控与 SIM 功能切换。</p></div>
-<p class="muted" style="position:absolute;bottom:14px;right:18px;font-size:11px;margin:0">By <a href="" AUTHOR_URL R"rawliteral(" target="_blank" rel="noopener" style="color:inherit">" AUTHOR_NAME R"rawliteral(</a></p>
+<p class="muted" style="position:absolute;bottom:14px;right:18px;font-size:11px;margin:0">By <a href=")rawliteral" AUTHOR_URL R"rawliteral(" target="_blank" rel="noopener" style="color:inherit">)rawliteral" AUTHOR_NAME R"rawliteral(</a></p>
 </section>
 <section class="login-panel">
 <div class="login-box">
@@ -87,7 +86,7 @@ const char* htmlPage = R"rawliteral(<!doctype html>
 <button class="nav-btn" data-view="diagnostics"><svg class="ico"><use href="#i-pulse"/></svg><span>诊断中心</span></button>
 <button class="nav-btn" data-view="settings"><svg class="ico"><use href="#i-set"/></svg><span>系统设置</span></button>
 </nav>
-<div class="rail-foot"><div class="rail-device"><strong id="railDevice">ESP32 网关</strong><span id="railIp">--</span></div><p class="muted" style="font-size:10px;margin:0 0 8px">By <a href="" AUTHOR_URL R"rawliteral(" target="_blank" rel="noopener" style="color:inherit">" AUTHOR_NAME R"rawliteral(</a></p>
+<div class="rail-foot"><div class="rail-device"><strong id="railDevice">ESP32 网关</strong><span id="railIp">--</span></div><p class="muted" style="font-size:10px;margin:0 0 8px">By <a href=")rawliteral" AUTHOR_URL R"rawliteral(" target="_blank" rel="noopener" style="color:inherit">)rawliteral" AUTHOR_NAME R"rawliteral(</a></p>
 <button id="logoutBtn" class="btn ghost logout"><svg class="ico"><use href="#i-out"/></svg><span>退出登录</span></button></div>
 </aside>
 <header class="topbar">
