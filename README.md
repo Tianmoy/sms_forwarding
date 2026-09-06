@@ -1,5 +1,7 @@
 # 低成本短信转发器
 
+> 作者:**Tianmoy** · 源码:<https://github.com/Tianmoy/sms_forwarding>
+
 > 当前分支为新方案，2022年的老方案请前往[luatos分支](https://github.com/chenxuuu/sms_forwarding/tree/old-luatos)。  
 本项目**仅用于接收短信**与进行保号相关功能。  
 当前重构版额外支持兼容 eUICC 的卡功能列表与人工切换；不提供通话、拨号或自动切卡。
