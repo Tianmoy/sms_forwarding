@@ -117,7 +117,7 @@ void loadConfig() {
     }
   }
   config.brandTitle = preferences.getString("brandTitle", "SMS FWD");
-  config.brandSub = preferences.getString("brandSub", "愿你天黑有灯，下雨有伞");
+  config.brandSub = preferences.getString("brandSub", "愿你天黑有灯,下雨有伞");
   for (int i = 0; i < MAX_CUSTOM_TASKS; i++) {
     String p = "task" + String(i);
     config.tasks[i].type = preferences.getUChar((p + "type").c_str(), TASK_NONE);
