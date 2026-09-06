@@ -55,6 +55,7 @@ uint8_t profileCount = 0;
 unsigned long profilesUpdatedAt = 0;
 String cachedEid;
 bool eidValid = false;
+bool cardIsEuicc = true;  // false = 当前卡不支持 eUICC,换卡/SIM 状态变化时重置
 SwitchState switchState = SWITCH_IDLE;
 SwitchJob job;
 Preferences esimPrefs;
@@ -258,7 +259,8 @@ bool openIsdr(int &channel, String &error) {
       return true;
     }
   }
-  error = "无法打开 eUICC ISD-R 通道(CCHO 与 CSIM 均失败)";
+  cardIsEuicc = false;
+  error = "当前卡不支持 eUICC(CCHO 与 CSIM 均失败)";
   return false;
 }
 
@@ -367,6 +369,10 @@ bool parseProfiles(const String &hex, String &error) {
 bool readProfiles(String &error) {
   if (profileIoBusy) {
     error = "eUICC 正在读取";
+    return false;
+  }
+  if (!cardIsEuicc) {
+    error = "当前卡不支持 eUICC";
     return false;
   }
   profileIoBusy = true;
@@ -483,6 +489,10 @@ void esimManagerBegin() {
 
 String esimGetEid(String &error) {
   if (eidValid) return cachedEid;
+  if (!cardIsEuicc) {
+    error = "当前卡不支持 eUICC";
+    return "";
+  }
   if (!simManagerIsReady()) {
     error = "SIM 尚未就绪";
     return "";
@@ -650,6 +660,7 @@ void esimManagerInvalidateProfiles() {
   profilesUpdatedAt = 0;
   cachedEid = "";
   eidValid = false;
+  cardIsEuicc = true;
 }
 
 bool esimStartSwitch(const String &profileId, String &message) {
