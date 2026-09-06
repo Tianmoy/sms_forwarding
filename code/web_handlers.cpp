@@ -294,119 +294,6 @@ void handleRoot() {
 }
 
 
-// 处理飞行模式控制请求
-void handleFlightMode() {
-  if (!authRequireCsrf()) return;
-  if (esimIsBusy()) {
-    server.send(409, "application/json", "{\"success\":false,\"message\":\"eSIM切换中，暂停飞行模式操作\"}");
-    return;
-  }
-  if (!requireModemRouteReady()) return;
-  
-  String action = server.arg("action");
-  if (action != "query" && !requirePostMethod()) return;
-  String json = "{";
-  bool success = false;
-  String message = "";
-  
-  if (action == "query") {
-    // 查询当前功能模式
-    logCaptureLn(String("网页端查询飞行模式: AT+CFUN?"));
-    String resp = sendATCommand("AT+CFUN?", 2000);
-    logCaptureLn(String("CFUN查询响应: " + resp));
-    
-    if (resp.indexOf("+CFUN:") >= 0) {
-      success = true;
-      int idx = resp.indexOf("+CFUN:");
-      int mode = resp.substring(idx + 6).toInt();
-      
-      String modeStr;
-      String statusIcon;
-      if (mode == 0) {
-        modeStr = "最小功能模式（关机）";
-        statusIcon = "🔴";
-      } else if (mode == 1) {
-        modeStr = "全功能模式（正常）";
-        statusIcon = "🟢";
-      } else if (mode == 4) {
-        modeStr = "飞行模式（射频关闭）";
-        statusIcon = "✈️";
-      } else {
-        modeStr = "未知模式 (" + String(mode) + ")";
-        statusIcon = "❓";
-      }
-      
-      message = "<table class='info-table'>";
-      message += "<tr><td>当前状态</td><td>" + statusIcon + " " + modeStr + "</td></tr>";
-      message += "<tr><td>CFUN值</td><td>" + String(mode) + "</td></tr>";
-      message += "</table>";
-    } else {
-      message = "查询失败";
-    }
-  }
-  else if (action == "toggle") {
-    // 先查询当前状态
-    String resp = sendATCommand("AT+CFUN?", 2000);
-    logCaptureLn(String("CFUN查询响应: " + resp));
-    
-    if (resp.indexOf("+CFUN:") >= 0) {
-      int idx = resp.indexOf("+CFUN:");
-      int currentMode = resp.substring(idx + 6).toInt();
-      
-      // 切换模式：1(正常) <-> 4(飞行模式)
-      int newMode = (currentMode == 1) ? 4 : 1;
-      String cmd = "AT+CFUN=" + String(newMode);
-      
-      logCaptureLn(String("切换飞行模式: " + cmd));
-      String setResp = sendATCommand(cmd.c_str(), 5000);
-      logCaptureLn(String("CFUN设置响应: " + setResp));
-      
-      if (setResp.indexOf("OK") >= 0) {
-        success = true;
-        if (newMode == 4) {
-          message = "已开启飞行模式 ✈️<br>模组射频已关闭，无法收发短信";
-        } else {
-          message = "已关闭飞行模式 🟢<br>模组恢复正常工作";
-        }
-      } else {
-        message = "切换失败: " + setResp;
-      }
-    } else {
-      message = "无法获取当前状态";
-    }
-  }
-  else if (action == "on") {
-    // 强制开启飞行模式
-    logCaptureLn(String("网页端强制开启飞行模式: AT+CFUN=4"));
-    String resp = sendATCommand("AT+CFUN=4", 5000);
-    if (resp.indexOf("OK") >= 0) {
-      success = true;
-      message = "已开启飞行模式 ✈️";
-    } else {
-      message = "开启失败: " + resp;
-    }
-  }
-  else if (action == "off") {
-    // 强制关闭飞行模式
-    logCaptureLn(String("网页端关闭飞行模式: AT+CFUN=1"));
-    String resp = sendATCommand("AT+CFUN=1", 5000);
-    if (resp.indexOf("OK") >= 0) {
-      success = true;
-      message = "已关闭飞行模式 🟢";
-    } else {
-      message = "关闭失败: " + resp;
-    }
-  }
-  else {
-    message = "未知操作";
-  }
-  
-  json += "\"success\":" + String(success ? "true" : "false") + ",";
-  json += "\"message\":\"" + jsonEscape(message) + "\"";
-  json += "}";
-  
-  server.send(200, "application/json", json);
-}
 
 // 处理AT指令测试请求
 void handleATCommand() {
@@ -970,47 +857,9 @@ void handlePing() {
   server.send(200, "application/json", json);
 }
 
-// 数据流量(PDP)开关
-void handleDataToggle() {
-  if (!authRequireCsrf()) return;
-  if (esimIsBusy()) {
-    server.send(409, "application/json", "{\"success\":false,\"message\":\"eSIM切换中，无法操作数据连接\"}");
-    return;
-  }
-  if (!requireModemRouteReady()) return;
-  if (!modemAcquireExclusive()) {
-    server.send(409, "application/json", "{\"success\":false,\"message\":\"模组正在处理其他通信，请稍后重试\"}");
-    return;
-  }
-  checkSerial1URC();
 
-  String action = server.arg("action");
-  if (action != "query" && !requirePostMethod()) return;
-  bool success = false;
-  String message;
 
-  if (action == "on") {
-    logCaptureLn(String("网页端开启数据连接: AT+CGACT=1,1"));
-    String resp = sendATCommand("AT+CGACT=1,1", 15000);
-    success = (resp.indexOf("OK") >= 0);
-    message = success ? "数据连接已开启" : "开启失败: " + resp.substring(0, 60);
-  } else if (action == "off") {
-    logCaptureLn(String("网页端关闭数据连接: AT+CGACT=0,1"));
-    String resp = sendATCommand("AT+CGACT=0,1", 8000);
-    success = (resp.indexOf("OK") >= 0);
-    message = success ? "数据连接已关闭" : "关闭失败: " + resp.substring(0, 60);
-  } else {
-    String resp = sendATCommand("AT+CGACT?", 5000);
-    int idx = resp.indexOf("+CGACT: 1,1");
-    success = resp.indexOf("+CGACT:") >= 0;
-    message = (idx >= 0) ? "数据连接已开启" : "数据连接已关闭";
-  }
 
-  String json = "{\"success\":" + String(success ? "true" : "false") +
-                ",\"message\":\"" + jsonEscape(message) + "\"}";
-  modemReleaseExclusive();
-  server.send(200, "application/json", json);
-}
 
 
 // 处理日志查询请求 — 返回环形缓冲区中的日志行

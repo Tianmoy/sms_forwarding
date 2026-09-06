@@ -19,8 +19,6 @@ bool checkAuth();
 void sendJsonResponse(int status, const String &json);
 void handleRoot();
 void handleQuery();
-void handleFlightMode();
-void handleDataToggle();
 bool wifiConnectAll();
 void wifiStartAp();
 void handleATCommand();

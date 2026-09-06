@@ -45,8 +45,6 @@ void setup() {
   server.on("/modem", handleModem);
   server.on("/wifi", HTTP_POST, handleWifi);
   server.on("/ping", HTTP_POST, handlePing);
-  server.on("/flight", handleFlightMode);
-  server.on("/data", handleDataToggle);
   registerApiRoutes();
   server.begin();
   logCaptureLn(String("HTTP服务器已启动"));
