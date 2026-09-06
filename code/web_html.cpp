@@ -1,5 +1,10 @@
 #include "web_html.h"
 
+// 署名配置:改这两行即可全局生效(登录页 + 侧栏)
+#define AUTHOR_NAME "Tianmoy"
+#define AUTHOR_URL "https://github.com/Tianmoy/sms_forwarding"
+
+
 const char* htmlPage = R"rawliteral(<!doctype html>
 <!-- Tianmoy · https://github.com/Tianmoy/sms_forwarding -->
 <html lang="zh-CN">
@@ -50,7 +55,7 @@ const char* htmlPage = R"rawliteral(<!doctype html>
 <div class="brand"><span class="brand-mark" data-brand-mark>SF</span><div><strong data-brand-title>SMS FWD</strong><small data-brand-sub>愿你天黑有灯,下雨有伞</small></div></div>
 <div class="radio-art"><i class="wave w1"></i><i class="wave w2"></i><i class="wave w3"></i><i class="mast"></i></div>
 <div class="scene-copy"><p class="eyebrow">ESP32 · ML307R</p><h1>每一条短信，<br>都有迹可循。</h1><p>本地通信值守、实时收件、推送监控与 SIM 功能切换。</p></div>
-<p class="muted" style="position:absolute;bottom:14px;right:18px;font-size:11px;margin:0">By <a href="https://github.com/Tianmoy/sms_forwarding" target="_blank" rel="noopener" style="color:inherit">Tianmoy</a></p>
+<p class="muted" style="position:absolute;bottom:14px;right:18px;font-size:11px;margin:0">By <a href="" AUTHOR_URL R"rawliteral(" target="_blank" rel="noopener" style="color:inherit">" AUTHOR_NAME R"rawliteral(</a></p>
 </section>
 <section class="login-panel">
 <div class="login-box">
@@ -82,7 +87,7 @@ const char* htmlPage = R"rawliteral(<!doctype html>
 <button class="nav-btn" data-view="diagnostics"><svg class="ico"><use href="#i-pulse"/></svg><span>诊断中心</span></button>
 <button class="nav-btn" data-view="settings"><svg class="ico"><use href="#i-set"/></svg><span>系统设置</span></button>
 </nav>
-<div class="rail-foot"><div class="rail-device"><strong id="railDevice">ESP32 网关</strong><span id="railIp">--</span></div><p class="muted" style="font-size:10px;margin:0 0 8px">By <a href="https://github.com/Tianmoy/sms_forwarding" target="_blank" rel="noopener" style="color:inherit">Tianmoy</a></p>
+<div class="rail-foot"><div class="rail-device"><strong id="railDevice">ESP32 网关</strong><span id="railIp">--</span></div><p class="muted" style="font-size:10px;margin:0 0 8px">By <a href="" AUTHOR_URL R"rawliteral(" target="_blank" rel="noopener" style="color:inherit">" AUTHOR_NAME R"rawliteral(</a></p>
 <button id="logoutBtn" class="btn ghost logout"><svg class="ico"><use href="#i-out"/></svg><span>退出登录</span></button></div>
 </aside>
 <header class="topbar">
@@ -184,8 +189,8 @@ const char* htmlPage = R"rawliteral(<!doctype html>
 <article class="card card-pad"><div class="card-title"><h3>WiFi 网络</h3><span id="wifiSourceBadge" class="badge">读取中</span></div><div id="wifiNetList" class="channel-list"></div><div class="btn-row" style="margin:10px 0 12px"><button id="addWifiNetBtn" type="button" class="btn icon-plus" title="添加备用 WiFi" aria-label="添加备用 WiFi"><svg class="ico"><use href="#i-plus"/></svg></button></div><div class="btn-row"><button id="saveWifiBtn" type="button" class="btn accent">保存 WiFi 并重启</button><button id="clearWifiBtn" type="button" class="btn danger">全部清空</button></div><p class="hint">主用断开 2 分钟自动切换备用；留空或删除即移除，同名不改密码则保留。</p></article>
 <article class="card card-pad"><div class="card-title"><h3>远程控制号码</h3></div><label class="field"><span>管理员手机号</span><input id="adminPhone" class="input" name="adminPhone" inputmode="tel" placeholder="+8613800138000"></label><label class="field"><span>号码黑名单</span><textarea id="numberBlackList" class="input" name="numberBlackList" placeholder="每行一个号码"></textarea></label></article>
 <article class="card card-pad"><div class="card-title"><h3>页面间隔</h3></div><label class="field"><span>状态刷新间隔（秒，1–60）</span><input id="pollSecondsInput" class="input" name="pollSeconds" type="number" min="1" max="60" placeholder="5"></label><p class="hint">状态自动刷新频率，默认 5 秒。</p></article>
-<article class="card card-pad wide"><div class="card-title"><h3>API 令牌</h3><span id="apiTokenState" class="badge">关闭</span></div><label class="field"><span>令牌（空 = 关闭）</span><input id="apiTokenInput" class="input" maxlength="64" placeholder="用于定时任务访问本机 API 或外部脚本"></label><div class="btn-row"><button id="genApiTokenBtn" type="button" class="btn">随机生成</button><button id="saveApiTokenBtn" type="button" class="btn accent">保存令牌</button></div><p class="hint">带 <code>Authorization: Bearer</code> 头即视为已登录，适用于定时任务与外部脚本；泄漏请立即更换。</p></article>
-<article class="card card-pad"><div class="card-title"><h3>设备</h3></div><div class="btn-row"><button id="rebootBtn" type="button" class="btn danger">重启设备</button><button id="factoryResetBtn" type="button" class="btn danger">恢复出厂设置</button></div><p class="hint">恢复出厂将清空全部配置与短信记录。</p></article>
+<article class="card card-pad"><div class="card-title"><h3>API 令牌</h3><span id="apiTokenState" class="badge">关闭</span></div><label class="field"><span>令牌（空 = 关闭）</span><input id="apiTokenInput" class="input" maxlength="64" placeholder="用于定时任务访问本机 API 或外部脚本"></label><div class="btn-row"><button id="genApiTokenBtn" type="button" class="btn">随机生成</button><button id="saveApiTokenBtn" type="button" class="btn accent">保存令牌</button></div><p class="hint">带 <code>Authorization: Bearer</code> 头即视为已登录，适用于定时任务与外部脚本；泄漏请立即更换。</p></article>
+<article class="card card-pad wide"><div class="card-title"><h3>设备</h3></div><div class="btn-row"><button id="rebootBtn" type="button" class="btn danger">重启设备</button><button id="factoryResetBtn" type="button" class="btn danger">恢复出厂设置</button></div><p class="hint">恢复出厂将清空全部配置与短信记录。</p></article>
 <div class="wide sticky-save"><button id="saveSettingsBtn" class="btn accent" type="submit">保存系统设置</button></div>
 </form>
 </section>
