@@ -494,7 +494,7 @@ void handleWireResult(WireStage completed, bool ok) {
       // continue. During ordinary detection, retry CMEE later so a modem that
       // currently returns bare ERROR can recover numeric SIM diagnostics.
       if (needsConfigure) {
-        startWire("AT+CGACT=0,1", WIRE_CGACT, CGACT_TIMEOUT_MS);
+        startWire("AT+ICCID", WIRE_ICCID);
       } else {
         nextActionAt = millis() + DETECT_INTERVAL_RETRY_MS;
       }
@@ -510,7 +510,7 @@ void handleWireResult(WireStage completed, bool ok) {
   switch (completed) {
     case WIRE_CMEE:
       if (needsConfigure) {
-        startWire("AT+CGACT=0,1", WIRE_CGACT, CGACT_TIMEOUT_MS);
+        startWire("AT+ICCID", WIRE_ICCID);
       } else {
         transportFailures = 0;
         nextActionAt = millis();
