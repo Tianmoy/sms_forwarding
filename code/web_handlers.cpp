@@ -12,12 +12,17 @@
 String logBuffer[LOG_BUF_SIZE];
 int logBufIdx = 0;
 int logBufCount = 0;
+uint32_t logRev = 0;
 static String _logLine;  // 行缓冲：logCapture 写入这里，logCaptureLn 提交整行
+
+// 推送任务与主循环会并发写日志,环形缓冲与行缓冲的操作必须互斥。
+static SemaphoreHandle_t logMutex = xSemaphoreCreateMutex();
 
 static void _logAppend(const String& line) {
   logBuffer[logBufIdx] = line;
   logBufIdx = (logBufIdx + 1) % LOG_BUF_SIZE;
   if (logBufCount < LOG_BUF_SIZE) logBufCount++;
+  ++logRev;
 }
 
 static void _logCommit() {
@@ -29,12 +34,16 @@ static void _logCommit() {
 
 void logCapture(const String& msg) {
   Serial.print(msg);
+  xSemaphoreTake(logMutex, portMAX_DELAY);
   _logLine += msg;
+  xSemaphoreGive(logMutex);
 }
 
 void logCapture(const char* msg) {
   Serial.print(msg);
+  xSemaphoreTake(logMutex, portMAX_DELAY);
   _logLine += msg;
+  xSemaphoreGive(logMutex);
 }
 
 void logCaptureF(const char* fmt, ...) {
@@ -44,28 +53,33 @@ void logCaptureF(const char* fmt, ...) {
   vsnprintf(buf, sizeof(buf), fmt, args);
   va_end(args);
   Serial.print(buf);
-  _logLine += buf;
   // 如果格式化字符串以 \n 结尾，则提交此行
   size_t len = strlen(buf);
+  xSemaphoreTake(logMutex, portMAX_DELAY);
+  _logLine += buf;
   if (len > 0 && buf[len - 1] == '\n') {
     _logLine.trim();  // 去掉尾部空格和可能多余的 \n
     _logCommit();
   }
+  xSemaphoreGive(logMutex);
 }
 
 void logCaptureLn(const String& msg) {
   Serial.println(msg);
+  xSemaphoreTake(logMutex, portMAX_DELAY);
   _logLine += msg;
   _logCommit();
+  xSemaphoreGive(logMutex);
 }
 
 void logCaptureLn(const char* msg) {
   Serial.println(msg);
+  xSemaphoreTake(logMutex, portMAX_DELAY);
   _logLine += msg;
   _logCommit();
+  xSemaphoreGive(logMutex);
 }
 
-// 所有管理路由统一的 Cookie 会话保护。
 void sendJsonResponse(int status, const String &json) {
   server.sendHeader("Cache-Control", "no-store");
   server.sendHeader("X-Content-Type-Options", "nosniff");
@@ -729,7 +743,28 @@ void handlePing() {
 void handleLog() {
   if (!checkAuth()) return;
 
-  String json = "[";
+  // ?rev=N 与当前一致时只回修订号,避免全量重传 120 行
+  if (server.hasArg("rev")) {
+    String rv = server.arg("rev");
+    rv.trim();
+    bool numeric = !rv.isEmpty();
+    for (size_t i = 0; numeric && i < rv.length(); ++i) {
+      if (!isdigit(static_cast<unsigned char>(rv[i]))) numeric = false;
+    }
+    xSemaphoreTake(logMutex, portMAX_DELAY);
+    bool same = numeric && rv.toInt() == static_cast<long>(logRev);
+    uint32_t currentRev = logRev;
+    xSemaphoreGive(logMutex);
+    if (same) {
+      sendJsonResponse(200, "{\"ok\":true,\"rev\":" + String(currentRev) + "}");
+      return;
+    }
+  }
+
+  String json = "{\"ok\":true,\"rev\":";
+  xSemaphoreTake(logMutex, portMAX_DELAY);
+  json += String(logRev);
+  json += ",\"lines\":[";
   int total = logBufCount;
   int start = total < LOG_BUF_SIZE ? 0 : logBufIdx;
   for (int i = 0; i < total; i++) {
@@ -737,7 +772,8 @@ void handleLog() {
     if (i > 0) json += ",";
     json += "\"" + jsonEscape(logBuffer[pos]) + "\"";
   }
-  json += "]";
+  xSemaphoreGive(logMutex);
+  json += "]}";
   server.send(200, "application/json", json);
 }
 

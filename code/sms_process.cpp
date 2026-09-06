@@ -282,10 +282,8 @@ bool processSmsContent(const char* sender, const char* text, const char* timesta
   logCaptureF("短信已接收，id=%lu，长度=%u%s\n", storedId,
               static_cast<unsigned>(smsText.length()), complete ? "" : "，分段不完整");
 
-  // 发送通知http（推送到所有启用的通道）
-  sendSMSToServer(sender, text, timestamp);
-  // 发送通知邮件
-  String subject = "收到短信";   String body = "发送者：";body+=sender;body+="\n时间：";body+=timestamp;body+="\n内容：";body+=text;   sendEmailNotification(subject.c_str(), body.c_str());
+  // 通知转发(推送+邮件)在独立任务执行,不阻塞收短信与 Web 服务
+  pushSmsNotifyAsync(sender, text, timestamp);
   return true;
 }
 

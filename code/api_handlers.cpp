@@ -117,6 +117,22 @@ void handleApiStatus() {
 
 void handleApiSmsList() {
   if (!authRequire()) return;
+  // ?rev=N 与当前一致时省略 messages 数组,客户端免下载免重渲染
+  if (server.hasArg("rev")) {
+    String rv = server.arg("rev");
+    rv.trim();
+    bool numeric = !rv.isEmpty();
+    for (size_t i = 0; numeric && i < rv.length(); ++i) {
+      if (!isdigit(static_cast<unsigned char>(rv[i]))) numeric = false;
+    }
+    uint32_t rev = smsStoreRev();
+    if (numeric && rv.toInt() == static_cast<long>(rev)) {
+      sendJsonResponse(200, "{\"ok\":true,\"rev\":" + String(rev) +
+                                ",\"count\":" + String(smsStoreCount()) +
+                                ",\"unread\":" + String(smsStoreUnread()) + ",\"capacity\":50}");
+      return;
+    }
+  }
   String messages = smsStoreListJson();
   String json = "{\"ok\":true,\"rev\":" + String(smsStoreRev()) +
                 ",\"count\":" + String(smsStoreCount()) + ",\"unread\":" +
