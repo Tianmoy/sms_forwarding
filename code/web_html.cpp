@@ -257,7 +257,16 @@ $('#tmMode').addEventListener('change',syncTaskModalRows);
 $('#tmType').addEventListener('change',syncTaskModalRows);
 $('#tmSave').addEventListener('click',async function(){var name=$('#tmName').value.trim()||('任务'+(TASK_EDIT>=0?TASK_EDIT+1:TASKS.length+1));var t={type:Number($('#tmType').value),name:name,mode:Number($('#tmMode').value),param:$('#tmParam').value.trim()};if(t.mode===0){var v=Math.max(1,Number($('#tmValue').value)||1),u=Number($('#tmUnit').value)||1;t.intervalSeconds=String(Math.round(v*u));t.hour=1;t.minute=30;t.weekday=1;t.dayOfMonth=1}else{var hm=($('#tmTime').value||'01:30').split(':');t.hour=Number(hm[0])||0;t.minute=Number(hm[1])||0;t.weekday=Number($('#tmSub').value);t.dayOfMonth=Math.min(28,Math.max(1,Number($('#tmMday').value)||1));t.intervalSeconds=0}t.httpMethod=Number($('#tmMethod').value)||0;t.headers=$('#tmHdrs').value;t.body=$('#tmBody').value;if(TASK_EDIT>=0)TASKS[TASK_EDIT]=t;else TASKS.push(t);$('#taskModal').hidden=true;saveTasksApi()});
 async function saveTasksApi(){var body={taskCount:TASKS.length};TASKS.forEach(function(t,i){body['task'+i+'type']=String(t.type);body['task'+i+'name']=t.name;body['task'+i+'mode']=String(t.mode);body['task'+i+'param']=t.param||'';body['task'+i+'intervalSeconds']=String(t.intervalSeconds||0);body['task'+i+'hour']=String(t.hour||0);body['task'+i+'minute']=String(t.minute||0);body['task'+i+'weekday']=String(t.weekday||0);body['task'+i+'mday']=String(t.dayOfMonth||1);body['task'+i+'hm']=String(t.httpMethod||0);body['task'+i+'hdrs']=t.headers||'';body['task'+i+'tbody']=t.body||''});try{var d=await post('/api/config',body);if(!good(d))throw new Error(msg(d,'保存失败'));toast('任务已保存');S.config=null;loadConfig(true)}catch(e){if(!e.auth)toast(e.message||'保存失败',true)}}
-setInterval(function(){if(!S.auth)return;var prof=(S.sim&&S.sim.profile)||'';if(prof){var el=$('#activeProfileName');if(el&&el.textContent!==prof)el.textContent=prof;try{if(localStorage.getItem('lastSimProf')!==prof)localStorage.setItem('lastSimProf',prof)}catch(_){}}},1000);
+setInterval(function(){if(!S.auth)return;var sim=S.sim||{};var prof=sim.profile||'';
+if(prof){
+  var el=$('#activeProfileName');if(el&&el.textContent!==prof)el.textContent=prof;
+  var nt=$('#activeProfileNote');if(nt&&(nt.textContent==='等待模组返回卡功能列表…'||nt.textContent==='等待模组确认 SIM 状态…'||nt.textContent.indexOf('正在')>=0)){nt.textContent='SIM 卡'}
+  var ic=$('#activeIccid');if(ic&&ic.textContent==='--'&&sim.iccidTail){ic.textContent='••••'+sim.iccidTail}
+  var nw=$('#activeNetwork');if(nw&&nw.textContent==='--'&&sim.operator){nw.textContent=sim.operator}
+  var pb=$('#simCardBadge');if(pb&&sim.state==='ready'){pb.textContent='已就绪';pb.className='badge good'}
+  try{if(localStorage.getItem('lastSimProf')!==prof)localStorage.setItem('lastSimProf',prof)}catch(_){}
+}
+},1000);
 try{var lp=localStorage.getItem('lastSimProf');if(lp){setText('#topSim',lp);setText('#activeProfileName',lp)}}catch(_){}
 function maybeShowWizard(c){try{if(sessionStorage.getItem('wizSkip'))return;var nets=(c.wifi&&c.wifi.nets)||[];var has=nets.some(function(n){return n.ssid});if(!has||(c.wifi&&c.wifi.apMode)){var b=$('#wizardNetList');b.textContent='';addWifiRow('',false,true,b);$('#wizardHint').textContent=(c.wifi&&c.wifi.apMode)?'设备当前处于配置热点模式，请填写 WiFi 后保存，设备将重启并连接新网络。':'检测到尚未配置 WiFi，请填写后保存，设备将重启并连接。';$('#wizardWrap').hidden=false}}catch(_){}}
 $('#wizardAddNetBtn').addEventListener('click',function(){if(document.querySelectorAll('#wizardNetList .wifi-row').length>=5)return;addWifiRow('',false,false,$('#wizardNetList'))});

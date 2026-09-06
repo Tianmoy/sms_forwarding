@@ -62,7 +62,7 @@ void handleApiStatus() {
          ",\"message\":\"" + jsonEscape(simManagerMessage()) +
          "\",\"generation\":" + String(simManagerGeneration()) +
          ",\"changedAt\":" + String(simManagerChangedAt()) + ",\"profile\":\"" +
-         jsonEscape(activeProfile) + "\",\"name\":\"" + jsonEscape(activeProfile) +
+         jsonEscape(activeProfile) + "\",\"iccidTail\":\"" + simManagerIccidTail() + "\",\"operator\":\"" + jsonEscape(networkOperator) + "\",\"name\":\"" + jsonEscape(activeProfile) +
          "\",\"profileName\":\"" + jsonEscape(activeProfile) + "\"},\"sms\":{\"stored\":" + String(smsStoreCount()) +
          ",\"unread\":" + String(smsStoreUnread()) + ",\"capacity\":50},\"push\":{\"enabled\":" +
          String(enabledPush) + "},\"job\":" + esimJobJson() + "}";

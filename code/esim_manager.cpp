@@ -920,7 +920,7 @@ String esimActiveProfileSmsLabel() {
   }
   String tail = simManagerIccidTail();
   if (tail.length() == 4) return String("SIM · 尾号 ") + tail;
-  return "接收卡未识别";
+  return "SIM";
 }
 
 String esimJobJson() {
